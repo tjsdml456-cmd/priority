@@ -240,8 +240,20 @@ drb_setup_result pdu_session_manager_impl::handle_drb_to_setup_item(pdu_session&
       // create QoS flow context
       const auto& qos_flow                     = qos_flow_info;
       new_drb->qos_flows[qos_flow.qos_flow_id] = std::make_unique<qos_flow_context>(qos_flow);
-      auto& new_qos_flow                       = new_drb->qos_flows[qos_flow.qos_flow_id];
-      logger.log_debug("Created QoS flow with {} and {}", new_qos_flow->qos_flow_id, new_qos_flow->five_qi);
+      auto&       new_qos_flow                 = new_drb->qos_flows[qos_flow.qos_flow_id];
+      const auto& original_profile             = new_qos_flow->get_original_profile();
+      const auto& runtime_profile              = new_qos_flow->get_runtime_profile();
+      logger.log_debug("Created QoS flow with {} and {}", new_qos_flow->qos_flow_id, original_profile.five_qi);
+      logger.log_info("QoS flow mapping: UE={} PSI={} DRB={} QFI={} 5QI={} priority={} ARP={}",
+                      static_cast<unsigned>(ue_index),
+                      new_session.pdu_session_id,
+                      drb_to_setup.drb_id,
+                      qos_flow.qos_flow_id,
+                      runtime_profile.five_qi,
+                      runtime_profile.qos_prio_level.has_value()
+                          ? fmt::format("{}", runtime_profile.qos_prio_level.value())
+                          : "default",
+                      runtime_profile.arp.prio_level_arp);
       sdap_config sdap_cfg = make_sdap_drb_config(drb_to_setup.sdap_cfg);
       new_session.sdap->add_mapping(
           qos_flow.qos_flow_id, drb_to_setup.drb_id, sdap_cfg, new_qos_flow->sdap_to_pdcp_adapter);
@@ -461,7 +473,7 @@ pdu_session_manager_impl::modify_pdu_session(const e1ap_pdu_session_res_to_modif
       logger.log_info("Replacing F1-U tunnel. old_ul_teid={} new_ul_teid={}", old_f1u_ul_teid, drb->f1u_ul_teid);
 
       // TODO Right now, we get the 5QI for the first QoS flow.
-      five_qi_t five_qi = drb->qos_flows.begin()->second->five_qi;
+      five_qi_t five_qi = drb->qos_flows.begin()->second->get_runtime_profile().five_qi;
       if (qos_cfg.find(five_qi) == qos_cfg.end()) {
         drb_result.cause = e1ap_cause_radio_network_t::not_supported_5qi_value;
         continue;
@@ -819,3 +831,4 @@ pdu_session_state_t pdu_session_manager_impl::get_pdu_session_state()
   }
   return st;
 }
+

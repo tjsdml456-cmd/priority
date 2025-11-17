@@ -149,9 +149,10 @@ static uint16_t get_lc_prio(const logical_channel_config& cfg)
   uint16_t prio = 0;
   if (is_srb(cfg.lcid)) {
     prio = cfg.lcid <= LCID_SRB1 ? 0 : 1;
+  } else if (cfg.qos.has_value()) {
+    prio = cfg.qos->runtime_qos.priority.value() * cfg.qos->runtime_arp_priority.value();
   } else {
-    prio = cfg.qos.has_value() ? cfg.qos->qos.priority.value() * cfg.qos->arp_priority.value()
-                               : qos_prio_level_t::max() * arp_prio_level_t::max();
+    prio = qos_prio_level_t::max() * arp_prio_level_t::max();
   }
   return prio;
 }
@@ -535,3 +536,4 @@ unsigned srsran::build_dl_transport_block_info(dl_msg_tb_info&             tb_in
   }
   return total_subpdu_bytes;
 }
+

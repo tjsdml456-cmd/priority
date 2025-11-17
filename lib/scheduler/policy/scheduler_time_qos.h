@@ -24,8 +24,12 @@
 
 #include "scheduler_policy.h"
 #include "srsran/adt/slotted_array.h"
+#include "srsran/ran/qos/arp_prio_level.h"
+#include "srsran/ran/qos/qos_prio_level.h"
 #include "srsran/scheduler/config/scheduler_expert_config.h"
 #include "srsran/support/math/exponential_averager.h"
+#include <chrono>
+#include <optional>
 
 namespace srsran {
 
@@ -61,6 +65,16 @@ private:
   /// Coefficient used to compute exponential moving average.
   const double exp_avg_alpha = 0.01;
 
+  struct runtime_priority_override_cfg {
+    bool                              enabled = false;
+    std::chrono::milliseconds         delay_low_priority{0};   // Time to lower priority
+    std::chrono::milliseconds         delay_high_priority{0};  // Time to raise priority back
+    std::optional<qos_prio_level_t>   target_priority_low;     // Priority when lowering
+    std::optional<arp_prio_level_t>   target_arp_low;          // ARP when lowering
+    std::optional<qos_prio_level_t>   target_priority_high;    // Priority when raising
+    std::optional<arp_prio_level_t>   target_arp_high;          // ARP when raising
+  };
+
   /// Holds the information needed to compute priority of a UE in a priority queue.
   struct ue_ctxt {
     ue_ctxt(du_ue_index_t ue_index_, du_cell_index_t cell_index_, const scheduler_time_qos* parent_);
@@ -90,6 +104,7 @@ private:
   private:
     void compute_dl_avg_rate(const slice_ue& u, unsigned nof_slots_elapsed);
     void compute_ul_avg_rate(const slice_ue& u, unsigned nof_slots_elapsed);
+    void maybe_apply_runtime_overrides(const slice_ue& u, slot_point current_slot);
 
     // Sum of DL bytes allocated for a given slot, before it is taken into account in the average rate computation.
     unsigned dl_sum_alloc_bytes = 0;
@@ -99,12 +114,17 @@ private:
     exp_average_fast_start<double> total_dl_avg_rate_;
     // Average UL rate expressed in bytes per slot experienced by UE.
     exp_average_fast_start<double> total_ul_avg_rate_;
+    slot_point runtime_activation_slot;
   };
 
   slotted_id_table<du_ue_index_t, ue_ctxt, MAX_NOF_DU_UES> ue_history_db;
 
   slot_point last_pdsch_slot;
   slot_point last_pusch_slot;
+
+  static runtime_priority_override_cfg load_runtime_override_cfg();
+  const runtime_priority_override_cfg  runtime_override_cfg;
 };
 
 } // namespace srsran
+

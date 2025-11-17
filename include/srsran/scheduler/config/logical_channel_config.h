@@ -45,6 +45,30 @@ struct logical_channel_config {
     /// QoS information present only for GBR QoS flows.
     std::optional<gbr_qos_flow_information> gbr_qos_info;
 
+    /// Runtime QoS characteristics that can be modified during operation.
+    /// Initially set to match the original qos, but can be overridden for runtime adjustments.
+    mutable standardized_qos_characteristics runtime_qos;
+    /// Runtime ARP Priority Level that can be modified during operation.
+    /// Initially set to match the original arp_priority, but can be overridden for runtime adjustments.
+    mutable arp_prio_level_t runtime_arp_priority;
+    /// Runtime GBR QoS information that can be modified during operation.
+    /// Initially set to match the original gbr_qos_info, but can be overridden for runtime adjustments.
+    mutable std::optional<gbr_qos_flow_information> runtime_gbr_qos_info;
+
+    /// Synchronizes runtime QoS values with original values.
+    void sync_runtime_with_original()
+    {
+      runtime_qos          = qos;
+      runtime_arp_priority = arp_priority;
+      runtime_gbr_qos_info = gbr_qos_info;
+    }
+
+    /// Sets the runtime QoS characteristics.
+    void set_runtime_qos(const standardized_qos_characteristics& value) const { runtime_qos = value; }
+
+    /// Sets the runtime ARP priority.
+    void set_runtime_arp_priority(const arp_prio_level_t& value) const { runtime_arp_priority = value; }
+
     bool operator==(const qos_info& rhs) const
     {
       return qos == rhs.qos && arp_priority == rhs.arp_priority && gbr_qos_info == rhs.gbr_qos_info;
@@ -71,3 +95,4 @@ struct logical_channel_config {
 };
 
 } // namespace srsran
+

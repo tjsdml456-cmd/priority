@@ -35,8 +35,25 @@ static constexpr unsigned MAX_PF_COEFF = 10;
 // [Implementation-defined] Maximum number of slots skipped between scheduling opportunities.
 static constexpr unsigned MAX_SLOT_SKIPPED = 20;
 
+scheduler_time_qos::runtime_priority_override_cfg scheduler_time_qos::load_runtime_override_cfg()
+{
+  runtime_priority_override_cfg cfg{};
+  cfg.enabled                = true;
+  cfg.delay_low_priority      = std::chrono::milliseconds(10000);  // 10초 후 낮춤
+  cfg.delay_high_priority     = std::chrono::milliseconds(20000);  // 20초 후 높임
+  // Set to maximum values to significantly lower priority (higher priority level = lower priority)
+  cfg.target_priority_low    = qos_prio_level_t(qos_prio_level_t::max());
+  cfg.target_arp_low         = arp_prio_level_t(arp_prio_level_t::max());
+  // Set to minimum values to significantly raise priority (lower priority level = higher priority)
+  cfg.target_priority_high   = qos_prio_level_t(0);
+  cfg.target_arp_high        = arp_prio_level_t(0);
+  return cfg;
+}
+
 scheduler_time_qos::scheduler_time_qos(const scheduler_ue_expert_config& expert_cfg_, du_cell_index_t cell_index_) :
-  params(std::get<time_qos_scheduler_config>(expert_cfg_.policy_cfg)), cell_index(cell_index_)
+  params(std::get<time_qos_scheduler_config>(expert_cfg_.policy_cfg)),
+  cell_index(cell_index_),
+  runtime_override_cfg(load_runtime_override_cfg())
 {
 }
 
@@ -165,18 +182,19 @@ static double compute_dl_qos_weights(const slice_ue&                  u,
 
       // Track the LC with the lowest combined priority (combining QoS and ARP priority levels).
       if (policy_params.priority_enabled) {
-        min_combined_prio = std::min(
-            static_cast<uint16_t>(lc->qos->qos.priority.value() * lc->qos->arp_priority.value()), min_combined_prio);
+        min_combined_prio = std::min(static_cast<uint16_t>(lc->qos->runtime_qos.priority.value() *
+                                                           lc->qos->runtime_arp_priority.value()),
+                                     min_combined_prio);
       }
 
       slot_point hol_toa = u.dl_hol_toa(lc->lcid);
       if (hol_toa.valid() and slot_tx >= hol_toa) {
         const unsigned hol_delay_ms = (slot_tx - hol_toa) / slot_tx.nof_slots_per_subframe();
-        const unsigned pdb          = lc->qos->qos.packet_delay_budget_ms;
+        const unsigned pdb          = lc->qos->runtime_qos.packet_delay_budget_ms;
         delay_weight += hol_delay_ms / static_cast<double>(pdb);
       }
 
-      if (not lc->qos->gbr_qos_info.has_value()) {
+      if (not lc->qos->runtime_gbr_qos_info.has_value()) {
         // LC is a non-GBR flow.
         continue;
       }
@@ -184,7 +202,7 @@ static double compute_dl_qos_weights(const slice_ue&                  u,
       // GBR flow.
       double dl_avg_rate = u.dl_avg_bit_rate(lc->lcid);
       if (dl_avg_rate != 0) {
-        gbr_weight += std::min(lc->qos->gbr_qos_info->gbr_dl / dl_avg_rate, max_metric_weight);
+        gbr_weight += std::min(lc->qos->runtime_gbr_qos_info->gbr_dl / dl_avg_rate, max_metric_weight);
       } else {
         gbr_weight += max_metric_weight;
       }
@@ -229,11 +247,12 @@ static double compute_ul_qos_weights(const slice_ue&                  u,
 
       // Track the LC with the lowest combined priority (combining QoS and ARP priority levels).
       if (policy_params.priority_enabled) {
-        min_combined_prio = std::min(
-            static_cast<uint16_t>(lc->qos->qos.priority.value() * lc->qos->arp_priority.value()), min_combined_prio);
+        min_combined_prio = std::min(static_cast<uint16_t>(lc->qos->runtime_qos.priority.value() *
+                                                           lc->qos->runtime_arp_priority.value()),
+                                     min_combined_prio);
       }
 
-      if (not lc->qos->gbr_qos_info.has_value()) {
+      if (not lc->qos->runtime_gbr_qos_info.has_value()) {
         // LC is a non-GBR flow.
         continue;
       }
@@ -242,7 +261,7 @@ static double compute_ul_qos_weights(const slice_ue&                  u,
       lcg_id_t lcg_id  = u.get_lcg_id(lc->lcid);
       double   ul_rate = u.ul_avg_bit_rate(lcg_id);
       if (ul_rate != 0) {
-        gbr_weight += std::min(lc->qos->gbr_qos_info->gbr_ul / ul_rate, max_metric_weight);
+        gbr_weight += std::min(lc->qos->runtime_gbr_qos_info->gbr_ul / ul_rate, max_metric_weight);
       } else {
         gbr_weight = max_metric_weight;
       }
@@ -258,6 +277,69 @@ static double compute_ul_qos_weights(const slice_ue&                  u,
   double pf_weight   = compute_pf_metric(estim_ul_rate, avg_ul_rate, policy_params.pf_fairness_coeff);
 
   return combine_qos_metrics(pf_weight, gbr_weight, prio_weight, 1.0, policy_params);
+}
+
+void scheduler_time_qos::ue_ctxt::maybe_apply_runtime_overrides(const slice_ue& u, slot_point current_slot)
+{
+  const auto& cfg = parent->runtime_override_cfg;
+  if (!cfg.enabled) {
+    return;
+  }
+
+  if (!runtime_activation_slot.valid()) {
+    runtime_activation_slot = current_slot;
+    return; // First slot, keep original values
+  }
+
+  slot_difference diff = current_slot - runtime_activation_slot;
+  if (diff < 0) {
+    diff += static_cast<int>(current_slot.nof_slots_per_hyper_system_frame());
+  }
+  unsigned elapsed_slots = static_cast<unsigned>(diff);
+  if (current_slot.nof_slots_per_subframe() == 0) {
+    return;
+  }
+  unsigned elapsed_ms = elapsed_slots / current_slot.nof_slots_per_subframe();
+
+  // Determine which priority level to apply based on elapsed time
+  bool apply_low_priority  = elapsed_ms >= static_cast<unsigned>(cfg.delay_low_priority.count()) &&
+                             elapsed_ms < static_cast<unsigned>(cfg.delay_high_priority.count());
+  bool apply_high_priority = elapsed_ms >= static_cast<unsigned>(cfg.delay_high_priority.count());
+
+  if (!apply_low_priority && !apply_high_priority) {
+    return; // Still in initial phase, keep original values
+  }
+
+  // Apply runtime QoS priority overrides to all logical channels
+  for (logical_channel_config_ptr lc : *u.logical_channels()) {
+    if (not u.contains(lc->lcid) || not lc->qos.has_value()) {
+      continue;
+    }
+
+    if (apply_low_priority) {
+      // Lower priority: set to maximum values
+      if (cfg.target_priority_low.has_value()) {
+        auto runtime_qos = lc->qos->runtime_qos;
+        runtime_qos.priority = cfg.target_priority_low.value();
+        lc->qos->set_runtime_qos(runtime_qos);
+      }
+
+      if (cfg.target_arp_low.has_value()) {
+        lc->qos->set_runtime_arp_priority(cfg.target_arp_low.value());
+      }
+    } else if (apply_high_priority) {
+      // Raise priority: set to minimum values
+      if (cfg.target_priority_high.has_value()) {
+        auto runtime_qos = lc->qos->runtime_qos;
+        runtime_qos.priority = cfg.target_priority_high.value();
+        lc->qos->set_runtime_qos(runtime_qos);
+      }
+
+      if (cfg.target_arp_high.has_value()) {
+        lc->qos->set_runtime_arp_priority(cfg.target_arp_high.value());
+      }
+    }
+  }
 }
 
 scheduler_time_qos::ue_ctxt::ue_ctxt(du_ue_index_t             ue_index_,
@@ -280,6 +362,7 @@ void scheduler_time_qos::ue_ctxt::compute_dl_prio(const slice_ue& u,
 
   // Process previous slot allocated bytes and compute average.
   compute_dl_avg_rate(u, nof_slots_elapsed);
+  maybe_apply_runtime_overrides(u, pdsch_slot);
 
   const ue_cell& ue_cc = u.get_cc();
 
@@ -321,6 +404,7 @@ void scheduler_time_qos::ue_ctxt::compute_ul_prio(const slice_ue& u,
 
   // Process bytes allocated in previous slot and compute average.
   compute_ul_avg_rate(u, nof_slots_elapsed);
+  maybe_apply_runtime_overrides(u, pusch_slot);
 
   const ue_cell& ue_cc = u.get_cc();
   srsran_sanity_check(not ue_cc.is_in_fallback_mode() and ue_cc.is_pusch_enabled(pdcch_slot, pusch_slot) and
@@ -415,3 +499,4 @@ void scheduler_time_qos::ue_ctxt::save_ul_alloc(unsigned alloc_bytes)
   }
   ul_sum_alloc_bytes += alloc_bytes;
 }
+
