@@ -203,67 +203,66 @@ std::vector<drb_id_t> du_bearer_resource_manager::setup_drbs(du_ue_resource_conf
                 core_5qi,
                 drb_to_setup.drb_id);
     
-    // Dynamic 5QI mapping based on DSCP values extracted from SDAP
-    // SDAP extracts actual DSCP values from iperf3 traffic and maps them to 5QI
-    // We use the same dscp_qos_mapper instance to get the DSCP->5QI mapping
-    // The mapping uses standard 5QI values from five_qi_qos_mapping.cpp
+    // ============================================================
+    // [단계 5] DU: DRB 설정 시 DSCP 기반 5QI 매핑
+    // ============================================================
+    // DRB(Data Radio Bearer) 설정 시점에 SDAP에서 등록된 DSCP 값을 조회
+    // Core에서 받은 5QI 대신 DSCP 기반으로 매핑된 5QI를 사용하여 차등 자원 할당
+    logger.info("[STEP5-DU-DRB] DRB 설정 시작 - UE{} DRB{} Core에서 받은 5QI={}",
+                static_cast<unsigned>(ue_index), drb_to_setup.drb_id, core_5qi);
+    
     auto& mapper = dscp_qos_mapper::get_instance();
     std::optional<uint8_t> ue_dscp = mapper.get_dscp_for_ue(static_cast<uint32_t>(ue_index));
     
     five_qi_t mapped_5qi = core_5qi;
     if (ue_dscp.has_value()) {
+      logger.info("[STEP5-DU-DRB] UE별 DSCP 조회 성공 - UE{} DSCP={} (SDAP에서 등록된 값)",
+                  static_cast<unsigned>(ue_index), ue_dscp.value());
+      
       // Get the 5QI mapping for this specific DSCP value
       std::optional<five_qi_t> dscp_mapped_5qi = mapper.map_dscp_to_5qi(ue_dscp.value());
       if (dscp_mapped_5qi.has_value()) {
         mapped_5qi = dscp_mapped_5qi.value();
+        logger.info("[STEP5-DU-DRB] DSCP→5QI 매핑 적용 - UE{} DSCP={} -> 5QI={} (Core 5QI={}에서 변경)",
+                    static_cast<unsigned>(ue_index), ue_dscp.value(), mapped_5qi, core_5qi);
         
         // Verify the mapped 5QI exists in standard mapping and log QoS characteristics
         const auto* qos_chars = get_5qi_to_qos_characteristics_mapping(mapped_5qi);
         if (qos_chars != nullptr) {
-          logger.info("DRB{}: UE{} DSCP-based 5QI mapping applied - DSCP={} -> Mapped 5QI={} (Core 5QI={}) "
-                      "[ResourceType={} Priority={} PDB={}ms PER={:.2e}]",                      
-                      drb_to_setup.drb_id,
+          logger.info("[STEP5-DU-DRB] QoS 특성 확인 - UE{} DRB{} 5QI={} [Type={} Priority={} PDB={}ms PER={:.2e}]",
                       static_cast<unsigned>(ue_index),
-                      ue_dscp.value(),
+                      drb_to_setup.drb_id,
                       mapped_5qi,
-                      core_5qi,
                       qos_chars->res_type == qos_flow_resource_type::gbr ? "GBR" :
                       qos_chars->res_type == qos_flow_resource_type::delay_critical_gbr ? "DelayCriticalGBR" : "NonGBR",
                       qos_chars->priority,
                       qos_chars->packet_delay_budget_ms,
-                      qos_chars->per.to_double());                      
+                      qos_chars->per.to_double());
         } else {
-          logger.warning("DRB{}: UE{} DSCP={} mapped to 5QI={} but not found in standard mapping, using it anyway",
-                        drb_to_setup.drb_id,
-                        static_cast<unsigned>(ue_index),
-                        ue_dscp.value(),
-                        mapped_5qi);
+          logger.warning("[STEP5-DU-DRB] 표준 매핑 없음 - UE{} DSCP={} 5QI={} (표준 매핑에 없지만 사용)",
+                        static_cast<unsigned>(ue_index), ue_dscp.value(), mapped_5qi);
         }
       } else {
         // Try to use standard mapping to find appropriate 5QI for this DSCP
+        logger.info("[STEP5-DU-DRB] 명시적 매핑 없음, 표준 매핑 시도 - UE{} DSCP={}",
+                    static_cast<unsigned>(ue_index), ue_dscp.value());
         std::optional<five_qi_t> std_mapped_5qi = mapper.map_dscp_to_5qi_using_standard_mapping(ue_dscp.value());
         if (std_mapped_5qi.has_value()) {
           mapped_5qi = std_mapped_5qi.value();
-          logger.info("DRB{}: UE{} DSCP={} dynamically mapped to 5QI={} using standard mapping (Core 5QI={})",
-                      drb_to_setup.drb_id,
-                      static_cast<unsigned>(ue_index),
-                      ue_dscp.value(),
-                      mapped_5qi,
-                      core_5qi);
+          logger.info("[STEP5-DU-DRB] 표준 매핑 적용 - UE{} DSCP={} -> 5QI={} (Core 5QI={}에서 변경)",
+                      static_cast<unsigned>(ue_index), ue_dscp.value(), mapped_5qi, core_5qi);
         } else {
-          logger.info("DRB{}: UE{} DSCP={} found but no 5QI mapping yet, using original 5QI={} (will be mapped when traffic arrives)",
-                      drb_to_setup.drb_id,
-                      static_cast<unsigned>(ue_index),
-                      ue_dscp.value(),
-                      core_5qi);
+          logger.info("[STEP5-DU-DRB] 매핑 대기 - UE{} DSCP={} (아직 매핑 안됨, Core 5QI={} 사용, 트래픽 도착 시 매핑 예정)",
+                      static_cast<unsigned>(ue_index), ue_dscp.value(), core_5qi);
         }
       }
     } else {
-      logger.info("DRB{}: UE{} no DSCP registered yet, using original 5QI={} (will be mapped when traffic arrives)",
-                  drb_to_setup.drb_id,
-                  static_cast<unsigned>(ue_index),
-                  core_5qi);
+      logger.info("[STEP5-DU-DRB] DSCP 미등록 - UE{} (SDAP에서 아직 DSCP 추출 안됨, Core 5QI={} 사용, 트래픽 도착 시 매핑 예정)",
+                  static_cast<unsigned>(ue_index), core_5qi);
     }
+    
+    logger.info("[STEP5-DU-DRB] DRB 설정 완료 - UE{} DRB{} 최종 5QI={} (Core 5QI={})",
+                static_cast<unsigned>(ue_index), drb_to_setup.drb_id, mapped_5qi, core_5qi);
     
     // Get QoS Config from mapped 5QI
     const du_qos_config& qos = qos_config.at(mapped_5qi);

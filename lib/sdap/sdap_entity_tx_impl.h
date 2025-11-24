@@ -83,48 +83,61 @@ public:
 
   void handle_sdu(byte_buffer sdu)
   {
-    // Extract DSCP from IP header for QoS mapping
+    // ============================================================
+    // [단계 1] SDAP TX: IP 패킷에서 DSCP 추출
+    // ============================================================
+    // DL 트래픽(네트워크 → UE)이 SDAP를 통과할 때 IPv4 헤더에서 DSCP 값을 추출
+    // iperf3로 보낸 트래픽의 DSCP 값(예: 46, 34, 0)을 여기서 추출
     std::optional<uint8_t> dscp = extract_dscp_from_ipv4(byte_buffer_view(sdu));
     if (dscp.has_value()) {
+      logger.log_info("[STEP1-SDAP] DSCP 추출 성공 - UE={} PSI={} QFI={} DRB={} DSCP={} (0x{:02x}) pdu_len={}",
+                      ue_index, psi, qfi, drb_id, dscp.value(), dscp.value(), sdu.length());
+      
       // Store DSCP for potential use in 5QI mapping
       last_dscp = dscp.value();
 
-      // Register this DSCP value for the UE (allows tracking actual DSCP values per UE)
+      // ============================================================
+      // [단계 2] DSCP 등록: UE별 DSCP 값 저장
+      // ============================================================
+      // dscp_qos_mapper 싱글톤에 UE 인덱스와 DSCP 값을 매핑하여 저장
+      // 이후 DU나 스케줄러에서 이 값을 조회할 수 있음
       auto& mapper = dscp_qos_mapper::get_instance();
       mapper.register_dscp_for_ue(ue_index, dscp.value());
+      logger.log_info("[STEP2-MAPPER] DSCP 등록 완료 - UE={} DSCP={} -> dscp_qos_mapper에 저장됨",
+                      ue_index, dscp.value());
 
-      // Auto-map DSCP to 5QI if this is the first time we see this DSCP value
-      // This allows iperf3 to send any DSCP value and it will be automatically mapped
+      // ============================================================
+      // [단계 3] 자동 5QI 매핑: 첫 관찰 시 DSCP → 5QI 자동 매핑
+      // ============================================================
+      // 이 DSCP 값을 처음 보는 경우, 표준 5QI 목록에서 적절한 5QI를 자동으로 선택
+      // DSCP 값이 높을수록(우선순위 높음) 더 높은 우선순위의 5QI를 선택
+      bool was_new_dscp = (mapper.map_dscp_to_5qi(dscp.value()).has_value() == false);
       mapper.auto_map_dscp_on_first_observation(dscp.value(), ue_index);
+      
+      if (was_new_dscp) {
+        std::optional<five_qi_t> new_mapped_5qi = mapper.map_dscp_to_5qi(dscp.value());
+        if (new_mapped_5qi.has_value()) {
+          logger.log_info("[STEP3-AUTO-MAP] 새로운 DSCP 자동 매핑 - UE={} DSCP={} -> 5QI={} (표준 5QI 목록에서 자동 선택)",
+                          ue_index, dscp.value(), five_qi_to_uint(new_mapped_5qi.value()));
+        }
+      }
 
-      // Map DSCP directly to 5QI using explicit mapping table
-      // This uses the actual DSCP value extracted from iperf3 traffic
+      // ============================================================
+      // [단계 4] 5QI 조회: 매핑된 5QI 확인
+      // ============================================================
+      // 등록된 DSCP → 5QI 매핑을 조회하여 어떤 5QI가 할당되었는지 확인
       std::optional<five_qi_t> mapped_5qi = mapper.map_dscp_to_5qi(dscp.value());
       
       if (mapped_5qi.has_value()) {
-        // Log DSCP extraction with 5QI mapping information
-        logger.log_info("SDAP TX: Extracted DSCP from IP packet - UE={} PSI={} QFI={} DRB={} DSCP={} (0x{:02x}) -> Mapped 5QI={} pdu_len={}",
-                        ue_index,
-                        psi,
-                        qfi,
-                        drb_id,
-                        dscp.value(),
-                        dscp.value(),
-                        five_qi_to_uint(mapped_5qi.value()),
-                        sdu.length());
+        logger.log_info("[STEP4-MAPPING] DSCP→5QI 매핑 확인 - UE={} PSI={} QFI={} DRB={} DSCP={} -> 5QI={}",
+                        ue_index, psi, qfi, drb_id, dscp.value(), five_qi_to_uint(mapped_5qi.value()));
       } else {
-        // No mapping exists for this DSCP value
-        logger.log_info("SDAP TX: Extracted DSCP from IP packet - UE={} PSI={} QFI={} DRB={} DSCP={} (0x{:02x}) -> No 5QI mapping found pdu_len={}",
-                        ue_index,
-                        psi,
-                        qfi,
-                        drb_id,
-                        dscp.value(),
-                        dscp.value(),
-                        sdu.length());
+        logger.log_warning("[STEP4-MAPPING] DSCP→5QI 매핑 없음 - UE={} DSCP={} (아직 매핑되지 않음, 표준 매핑 시도 예정)",
+                          ue_index, dscp.value());
       }
     } else {
-      logger.log_debug("TX PDU. {} pdu_len={} (no DSCP - not IPv4 or invalid packet)", qfi, sdu.length());
+      logger.log_debug("[STEP1-SDAP] DSCP 추출 실패 - UE={} QFI={} (IPv4 패킷이 아니거나 헤더 파싱 실패) pdu_len={}",
+                      ue_index, qfi, sdu.length());
     }
 
     // pass through

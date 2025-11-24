@@ -25,6 +25,7 @@
 #include "../support/csi_report_helpers.h"
 #include "../ue_scheduling/grant_params_selector.h"
 #include "srsran/ran/qos/five_qi_qos_mapping.h"
+#include "srsran/sdap/dscp_qos_mapper.h"
 #include "srsran/srslog/srslog.h"
 #include <algorithm>
 
@@ -166,11 +167,26 @@ static double compute_dl_qos_weights(const slice_ue&                  u,
         continue;
       }
 
-      // Track the LC with the lowest combined priority (combining QoS and ARP priority levels).
+      // ============================================================
+      // [단계 7] 스케줄러: Priority 계산 (prio_weight 결정)
+      // ============================================================
+      // runtime_qos.priority는 [단계 6]에서 DSCP 기반으로 설정된 값
+      // 이 값과 ARP priority를 곱하여 combined priority 계산
+      // min_combined_prio가 낮을수록(우선순위 높음) prio_weight가 높아짐
       if (policy_params.priority_enabled) {
-        min_combined_prio = std::min(static_cast<uint16_t>(lc->qos->runtime_qos.priority.value() *
-                                                           lc->qos->runtime_arp_priority.value()),
-                                     min_combined_prio);
+        uint16_t combined_prio = static_cast<uint16_t>(lc->qos->runtime_qos.priority.value() *
+                                                       lc->qos->runtime_arp_priority.value());
+        min_combined_prio = std::min(combined_prio, min_combined_prio);
+        
+        static unsigned log_counter = 0;
+        if ((log_counter++ % 100) == 0) {  // 100번마다 로그
+          static srslog::basic_logger& logger = srslog::fetch_basic_logger("SCHED");
+          logger.debug("[STEP7-SCHED] Priority 계산 - UE{} LCID{} QoS_Prio={} ARP_Prio={} Combined={}",
+                       u.ue_index(), static_cast<unsigned>(lc->lcid),
+                       lc->qos->runtime_qos.priority.value(),
+                       lc->qos->runtime_arp_priority.value(),
+                       combined_prio);
+        }
       }
 
       slot_point hol_toa = u.dl_hol_toa(lc->lcid);
@@ -200,10 +216,23 @@ static double compute_dl_qos_weights(const slice_ue&                  u,
   delay_weight = policy_params.pdb_enabled and delay_weight != 0 ? delay_weight : 1.0;
 
   double pf_weight = compute_pf_metric(estim_dl_rate, avg_dl_rate, policy_params.pf_fairness_coeff);
+  
+  // ============================================================
+  // [단계 8] 스케줄러: prio_weight 최종 계산
+  // ============================================================
+  // min_combined_prio가 낮을수록(우선순위 높음) prio_weight가 높아짐
+  // prio_weight는 final_priority 계산에 사용되어 스케줄링 우선순위 결정
   // If priority is disabled, set the priority weight of all UEs to 1.0.
   double prio_weight = policy_params.priority_enabled ? (max_combined_prio_level + 1 - min_combined_prio) /
                                                             static_cast<double>(max_combined_prio_level + 1)
                                                       : 1.0;
+  
+  static unsigned prio_log_counter = 0;
+  if (policy_params.priority_enabled && (prio_log_counter++ % 100) == 0) {
+    static srslog::basic_logger& logger = srslog::fetch_basic_logger("SCHED");
+    logger.debug("[STEP8-SCHED] prio_weight 계산 - UE{} min_combined_prio={} prio_weight={:.3f}",
+                 u.ue_index(), min_combined_prio, prio_weight);
+  }
 
   // Log priority calculation details (periodically to avoid log spam)
   static unsigned log_counter = 0;
@@ -292,9 +321,15 @@ static double compute_ul_qos_weights(const slice_ue&                  u,
 
 void scheduler_time_qos::ue_ctxt::apply_5qi_based_runtime_overrides(const slice_ue& u)
 {
-  // Apply 5QI-based runtime QoS overrides to all logical channels
-  // Use standard 5QI to QoS characteristics mapping from five_qi_qos_mapping.cpp
-  // ARP priority is kept from Core (not overridden)
+  // ============================================================
+  // [단계 6] 스케줄러: 스케줄링 시마다 DSCP 기반 5QI 동적 조회
+  // ============================================================
+  // 매 스케줄링 슬롯마다 호출되어 최신 DSCP 값을 확인하고 5QI를 동적으로 조정
+  // DRB 설정 시점에 DSCP가 없어도, 이후 트래픽이 오면 자동으로 반영됨
+  // ARP priority는 Core에서 받은 값을 유지 (변경하지 않음)
+  auto& mapper = dscp_qos_mapper::get_instance();
+  static srslog::basic_logger& logger = srslog::fetch_basic_logger("SCHED");
+  
   for (logical_channel_config_ptr lc : *u.logical_channels()) {
     if (not u.contains(lc->lcid) || not lc->qos.has_value()) {
       continue;
@@ -305,8 +340,40 @@ void scheduler_time_qos::ue_ctxt::apply_5qi_based_runtime_overrides(const slice_
       continue;
     }
 
-    // Get standard priority from five_qi_qos_mapping.cpp
-    const standardized_qos_characteristics* qos_chars = get_5qi_to_qos_characteristics_mapping(lc->qos->five_qi);
+    // ============================================================
+    // [단계 6-1] DSCP 기반 5QI 조회
+    // ============================================================
+    // Logical Channel의 원본 5QI를 시작점으로 하되, DSCP가 있으면 그것을 우선 사용
+    five_qi_t effective_5qi = lc->qos->five_qi;
+    std::optional<uint8_t> ue_dscp = mapper.get_dscp_for_ue(static_cast<uint32_t>(ue_index));
+    
+    if (ue_dscp.has_value()) {
+      logger.debug("[STEP6-SCHED] DSCP 조회 - UE{} LCID{} 원본 5QI={} DSCP={}",
+                   ue_index, static_cast<unsigned>(lc->lcid), lc->qos->five_qi, ue_dscp.value());
+      
+      // Try to get DSCP-based 5QI mapping
+      std::optional<five_qi_t> dscp_mapped_5qi = mapper.map_dscp_to_5qi(ue_dscp.value());
+      if (dscp_mapped_5qi.has_value()) {
+        effective_5qi = dscp_mapped_5qi.value();
+        logger.info("[STEP6-SCHED] DSCP→5QI 매핑 적용 - UE{} LCID{} DSCP={} -> 5QI={} (원본 5QI={}에서 변경)",
+                    ue_index, static_cast<unsigned>(lc->lcid), ue_dscp.value(), effective_5qi, lc->qos->five_qi);
+      } else {
+        // Try standard mapping
+        std::optional<five_qi_t> std_mapped_5qi = mapper.map_dscp_to_5qi_using_standard_mapping(ue_dscp.value());
+        if (std_mapped_5qi.has_value()) {
+          effective_5qi = std_mapped_5qi.value();
+          logger.info("[STEP6-SCHED] 표준 매핑 적용 - UE{} LCID{} DSCP={} -> 5QI={} (원본 5QI={}에서 변경)",
+                      ue_index, static_cast<unsigned>(lc->lcid), ue_dscp.value(), effective_5qi, lc->qos->five_qi);
+        }
+      }
+    }
+
+    // ============================================================
+    // [단계 6-2] 5QI → Priority 변환 및 Runtime QoS 업데이트
+    // ============================================================
+    // effective_5QI를 사용하여 표준 QoS 특성에서 priority를 가져옴
+    // 이 priority 값이 prio_weight 계산에 사용되어 스케줄링 우선순위 결정
+    const standardized_qos_characteristics* qos_chars = get_5qi_to_qos_characteristics_mapping(effective_5qi);
     if (qos_chars != nullptr) {
       // Override priority with standard value, keep ARP from Core (not overridden)
       auto runtime_qos = lc->qos->runtime_qos;
@@ -316,14 +383,24 @@ void scheduler_time_qos::ue_ctxt::apply_5qi_based_runtime_overrides(const slice_
       // ARP priority remains from Core (not overridden)
       
       // Log runtime QoS override for debugging
-      static srslog::basic_logger& logger = srslog::fetch_basic_logger("SCHED");
-      logger.info("UE{} LCID{}: 5QI={} priority override - {} -> {} (ARP={} from Core)",
-                  ue_index,
-                  static_cast<unsigned>(lc->lcid),
-                  lc->qos->five_qi,
-                  old_priority.value(),
-                  qos_chars->priority.value(),
-                  lc->qos->runtime_arp_priority.value());
+      if (effective_5qi != lc->qos->five_qi) {
+        logger.info("[STEP6-SCHED] Priority 업데이트 (DSCP 기반) - UE{} LCID{} 5QI={}->{} Priority={}->{} (ARP={})",
+                    ue_index,
+                    static_cast<unsigned>(lc->lcid),
+                    lc->qos->five_qi,
+                    effective_5qi,
+                    old_priority.value(),
+                    qos_chars->priority.value(),
+                    lc->qos->runtime_arp_priority.value());
+      } else {
+        logger.debug("[STEP6-SCHED] Priority 업데이트 - UE{} LCID{} 5QI={} Priority={}->{} (ARP={})",
+                     ue_index,
+                     static_cast<unsigned>(lc->lcid),
+                     effective_5qi,
+                     old_priority.value(),
+                     qos_chars->priority.value(),
+                     lc->qos->runtime_arp_priority.value());
+      }
     }
   }
 }
