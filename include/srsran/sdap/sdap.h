@@ -90,6 +90,12 @@ public:
   virtual void
   add_mapping(qos_flow_id_t qfi, drb_id_t drb_id, sdap_config sdap_cfg, sdap_tx_pdu_notifier& tx_pdu_notifier) = 0;
   virtual void remove_mapping(drb_id_t drb_id)                                                                 = 0;
+
+  /// Get DSCP value for a specific QFI (extracted from IP packets)
+  virtual std::optional<uint8_t> get_dscp_for_qfi(qos_flow_id_t qfi) const { return {}; }
+
+  /// Get DSCP value for a specific DRB (extracted from IP packets)
+  virtual std::optional<uint8_t> get_dscp_for_drb(drb_id_t drb_id) const { return {}; }
 };
 
 } // namespace srs_cu_up

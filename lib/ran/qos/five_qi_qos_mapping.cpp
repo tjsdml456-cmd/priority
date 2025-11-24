@@ -21,7 +21,9 @@
  */
 
 #include "srsran/ran/qos/five_qi_qos_mapping.h"
+#include <algorithm>
 #include <unordered_map>
+#include <vector>
 
 using namespace srsran;
 
@@ -84,4 +86,28 @@ const qos_chars* srsran::get_5qi_to_qos_characteristics_mapping(five_qi_t five_q
 {
   const auto qos_char = five_qi_to_qos_mapping.find(five_qi);
   return qos_char != five_qi_to_qos_mapping.end() ? &qos_char->second : nullptr;
+}
+
+std::vector<five_qi_t> srsran::get_all_available_5qi_values()
+{
+  std::vector<five_qi_t> result;
+  result.reserve(five_qi_to_qos_mapping.size());
+
+  // Extract all 5QI values and sort by priority (lower priority value = higher priority)
+  std::vector<std::pair<five_qi_t, qos_prio_level_t>> five_qi_with_priority;
+  for (const auto& [five_qi, qos_char] : five_qi_to_qos_mapping) {
+    five_qi_with_priority.emplace_back(five_qi, qos_char.priority);  
+  }
+
+  // Sort by priority (ascending - lower priority value means higher priority)
+  std::sort(five_qi_with_priority.begin(),
+            five_qi_with_priority.end(),
+            [](const auto& a, const auto& b) { return a.second < b.second; });
+
+  // Extract sorted 5QI values
+  for (const auto& [five_qi, _] : five_qi_with_priority) {
+    result.push_back(five_qi);
+  }
+
+  return result;
 }

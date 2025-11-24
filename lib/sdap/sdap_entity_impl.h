@@ -61,6 +61,28 @@ public:
     tx_it->second->handle_sdu(std::move(sdu));
   }
 
+  /// Get DSCP value for a specific QFI
+  std::optional<uint8_t> get_dscp_for_qfi(qos_flow_id_t qfi) const override  
+  {
+    auto tx_it = tx_map.find(qfi);
+    if (tx_it != tx_map.end()) {
+      return tx_it->second->get_last_dscp();
+    }
+    return {};
+  }
+
+  /// Get DSCP value for a specific DRB
+  std::optional<uint8_t> get_dscp_for_drb(drb_id_t drb_id) const override  
+  {
+    // Find QFI mapped to this DRB
+    for (const auto& [qfi, tx_impl] : tx_map) {
+      if (tx_impl->get_drb_id() == drb_id) {
+        return tx_impl->get_last_dscp();
+      }
+    }
+    return {};
+  }
+  
   bool is_mapped(qos_flow_id_t qfi) final { return tx_map.find(qfi) != tx_map.end(); }
 
   void

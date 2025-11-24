@@ -24,6 +24,8 @@
 #include "../slicing/slice_ue_repository.h"
 #include "../support/csi_report_helpers.h"
 #include "../ue_scheduling/grant_params_selector.h"
+#include "srsran/ran/qos/five_qi_qos_mapping.h"
+#include "srsran/srslog/srslog.h"
 #include <algorithm>
 
 using namespace srsran;
@@ -35,25 +37,9 @@ static constexpr unsigned MAX_PF_COEFF = 10;
 // [Implementation-defined] Maximum number of slots skipped between scheduling opportunities.
 static constexpr unsigned MAX_SLOT_SKIPPED = 20;
 
-scheduler_time_qos::runtime_priority_override_cfg scheduler_time_qos::load_runtime_override_cfg()
-{
-  runtime_priority_override_cfg cfg{};
-  cfg.enabled                = true;
-  cfg.delay_low_priority      = std::chrono::milliseconds(10000);  // 10초 후 낮춤
-  cfg.delay_high_priority     = std::chrono::milliseconds(20000);  // 20초 후 높임
-  // Set to maximum values to significantly lower priority (higher priority level = lower priority)
-  cfg.target_priority_low    = qos_prio_level_t(qos_prio_level_t::max());
-  cfg.target_arp_low         = arp_prio_level_t(arp_prio_level_t::max());
-  // Set to minimum values to significantly raise priority (lower priority level = higher priority)
-  cfg.target_priority_high   = qos_prio_level_t(0);
-  cfg.target_arp_high        = arp_prio_level_t(0);
-  return cfg;
-}
-
 scheduler_time_qos::scheduler_time_qos(const scheduler_ue_expert_config& expert_cfg_, du_cell_index_t cell_index_) :
   params(std::get<time_qos_scheduler_config>(expert_cfg_.policy_cfg)),
-  cell_index(cell_index_),
-  runtime_override_cfg(load_runtime_override_cfg())
+  cell_index(cell_index_)
 {
 }
 
@@ -219,8 +205,33 @@ static double compute_dl_qos_weights(const slice_ue&                  u,
                                                             static_cast<double>(max_combined_prio_level + 1)
                                                       : 1.0;
 
+  // Log priority calculation details (periodically to avoid log spam)
+  static unsigned log_counter = 0;
+  if ((log_counter++ % 100) == 0) {  // Log every 100th call
+    static srslog::basic_logger& logger = srslog::fetch_basic_logger("SCHED");
+    logger.info("DL Priority calc: UE{} min_combined_prio={}, prio_weight={:.3f}, pf_weight={:.3f}, gbr_weight={:.3f}, delay_weight={:.3f}",
+                u.ue_index(),
+                min_combined_prio,
+                prio_weight,
+                pf_weight,
+                gbr_weight,
+                delay_weight);
+  }
+
   // The return is a combination of ARP and QoS priorities, GBR and PF weight functions.
-  return combine_qos_metrics(pf_weight, gbr_weight, prio_weight, delay_weight, policy_params);
+  double final_priority = combine_qos_metrics(pf_weight, gbr_weight, prio_weight, delay_weight, policy_params);
+  
+  // Log final priority (periodically)
+  static unsigned final_log_counter = 0;
+  if ((final_log_counter++ % 100) == 0) {
+    static srslog::basic_logger& logger = srslog::fetch_basic_logger("SCHED");
+    logger.info("DL Final Priority: UE{} final_priority={:.3f} (min_combined_prio={})",
+                u.ue_index(),
+                final_priority,
+                min_combined_prio);
+  }
+  
+  return final_priority;
 }
 
 /// \brief Computes UL weights used in computation of UL priority value for a UE in a slot.
@@ -279,65 +290,40 @@ static double compute_ul_qos_weights(const slice_ue&                  u,
   return combine_qos_metrics(pf_weight, gbr_weight, prio_weight, 1.0, policy_params);
 }
 
-void scheduler_time_qos::ue_ctxt::maybe_apply_runtime_overrides(const slice_ue& u, slot_point current_slot)
+void scheduler_time_qos::ue_ctxt::apply_5qi_based_runtime_overrides(const slice_ue& u)
 {
-  const auto& cfg = parent->runtime_override_cfg;
-  if (!cfg.enabled) {
-    return;
-  }
-
-  if (!runtime_activation_slot.valid()) {
-    runtime_activation_slot = current_slot;
-    return; // First slot, keep original values
-  }
-
-  slot_difference diff = current_slot - runtime_activation_slot;
-  if (diff < 0) {
-    diff += static_cast<int>(current_slot.nof_slots_per_hyper_system_frame());
-  }
-  unsigned elapsed_slots = static_cast<unsigned>(diff);
-  if (current_slot.nof_slots_per_subframe() == 0) {
-    return;
-  }
-  unsigned elapsed_ms = elapsed_slots / current_slot.nof_slots_per_subframe();
-
-  // Determine which priority level to apply based on elapsed time
-  bool apply_low_priority  = elapsed_ms >= static_cast<unsigned>(cfg.delay_low_priority.count()) &&
-                             elapsed_ms < static_cast<unsigned>(cfg.delay_high_priority.count());
-  bool apply_high_priority = elapsed_ms >= static_cast<unsigned>(cfg.delay_high_priority.count());
-
-  if (!apply_low_priority && !apply_high_priority) {
-    return; // Still in initial phase, keep original values
-  }
-
-  // Apply runtime QoS priority overrides to all logical channels
+  // Apply 5QI-based runtime QoS overrides to all logical channels
+  // Use standard 5QI to QoS characteristics mapping from five_qi_qos_mapping.cpp
+  // ARP priority is kept from Core (not overridden)
   for (logical_channel_config_ptr lc : *u.logical_channels()) {
     if (not u.contains(lc->lcid) || not lc->qos.has_value()) {
       continue;
     }
 
-    if (apply_low_priority) {
-      // Lower priority: set to maximum values
-      if (cfg.target_priority_low.has_value()) {
-        auto runtime_qos = lc->qos->runtime_qos;
-        runtime_qos.priority = cfg.target_priority_low.value();
-        lc->qos->set_runtime_qos(runtime_qos);
-      }
+    // Skip if 5QI is invalid
+    if (lc->qos->five_qi == five_qi_t::invalid) {
+      continue;
+    }
 
-      if (cfg.target_arp_low.has_value()) {
-        lc->qos->set_runtime_arp_priority(cfg.target_arp_low.value());
-      }
-    } else if (apply_high_priority) {
-      // Raise priority: set to minimum values
-      if (cfg.target_priority_high.has_value()) {
-        auto runtime_qos = lc->qos->runtime_qos;
-        runtime_qos.priority = cfg.target_priority_high.value();
-        lc->qos->set_runtime_qos(runtime_qos);
-      }
-
-      if (cfg.target_arp_high.has_value()) {
-        lc->qos->set_runtime_arp_priority(cfg.target_arp_high.value());
-      }
+    // Get standard priority from five_qi_qos_mapping.cpp
+    const standardized_qos_characteristics* qos_chars = get_5qi_to_qos_characteristics_mapping(lc->qos->five_qi);
+    if (qos_chars != nullptr) {
+      // Override priority with standard value, keep ARP from Core (not overridden)
+      auto runtime_qos = lc->qos->runtime_qos;
+      qos_prio_level_t old_priority = runtime_qos.priority;
+      runtime_qos.priority = qos_chars->priority;
+      lc->qos->set_runtime_qos(runtime_qos);
+      // ARP priority remains from Core (not overridden)
+      
+      // Log runtime QoS override for debugging
+      static srslog::basic_logger& logger = srslog::fetch_basic_logger("SCHED");
+      logger.info("UE{} LCID{}: 5QI={} priority override - {} -> {} (ARP={} from Core)",
+                  ue_index,
+                  static_cast<unsigned>(lc->lcid),
+                  lc->qos->five_qi,
+                  old_priority.value(),
+                  qos_chars->priority.value(),
+                  lc->qos->runtime_arp_priority.value());
     }
   }
 }
@@ -362,7 +348,7 @@ void scheduler_time_qos::ue_ctxt::compute_dl_prio(const slice_ue& u,
 
   // Process previous slot allocated bytes and compute average.
   compute_dl_avg_rate(u, nof_slots_elapsed);
-  maybe_apply_runtime_overrides(u, pdsch_slot);
+  apply_5qi_based_runtime_overrides(u);
 
   const ue_cell& ue_cc = u.get_cc();
 
@@ -404,7 +390,7 @@ void scheduler_time_qos::ue_ctxt::compute_ul_prio(const slice_ue& u,
 
   // Process bytes allocated in previous slot and compute average.
   compute_ul_avg_rate(u, nof_slots_elapsed);
-  maybe_apply_runtime_overrides(u, pusch_slot);
+  apply_5qi_based_runtime_overrides(u);
 
   const ue_cell& ue_cc = u.get_cc();
   srsran_sanity_check(not ue_cc.is_in_fallback_mode() and ue_cc.is_pusch_enabled(pdcch_slot, pusch_slot) and

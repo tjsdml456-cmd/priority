@@ -32,6 +32,7 @@ struct du_ue_bearer_resource_update_request {
   span<const f1ap_drb_to_setup>  drbs_to_setup;
   span<const f1ap_drb_to_modify> drbs_to_mod;
   span<const drb_id_t>           drbs_to_rem;
+  du_ue_index_t                  ue_index;
 };
 
 struct du_ue_bearer_resource_update_response {
@@ -54,7 +55,7 @@ public:
 
 private:
   void                  setup_srbs(du_ue_resource_config& ue_cfg, const du_ue_bearer_resource_update_request& request);
-  std::vector<drb_id_t> setup_drbs(du_ue_resource_config& ue_cfg, const du_ue_bearer_resource_update_request& request);
+  std::vector<drb_id_t> setup_drbs(du_ue_resource_config& ue_cfg, const du_ue_bearer_resource_update_request& request, du_ue_index_t ue_index);  
   std::vector<drb_id_t> modify_drbs(du_ue_resource_config& ue_cfg, const du_ue_bearer_resource_update_request& request);
   void                  rem_drbs(du_ue_resource_config& ue_cfg, const du_ue_bearer_resource_update_request& request);
 

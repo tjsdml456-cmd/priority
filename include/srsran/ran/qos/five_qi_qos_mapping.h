@@ -26,6 +26,7 @@
 #include "srsran/ran/qos/packet_error_rate.h"
 #include "srsran/ran/qos/qos_prio_level.h"
 #include <optional>
+#include <vector>
 
 namespace srsran {
 
@@ -69,5 +70,9 @@ struct standardized_qos_characteristics {
 /// \return The standardized 5QI to QoS characteristics mapping from TS 23.501, table 5.7.4-1. Returns nullptr if the
 /// 5QI is not present in the table.
 const standardized_qos_characteristics* get_5qi_to_qos_characteristics_mapping(five_qi_t five_qi);
+
+/// \brief Get all available standard 5QI values from TS 23.501, table 5.7.4-1
+/// \return Vector of all available 5QI values sorted by priority (lower priority value = higher priority)
+std::vector<five_qi_t> get_all_available_5qi_values();
 
 } // namespace srsran

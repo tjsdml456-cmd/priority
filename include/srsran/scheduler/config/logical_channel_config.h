@@ -24,6 +24,7 @@
 
 #include "srsran/ran/logical_channel/lcid.h"
 #include "srsran/ran/qos/arp_prio_level.h"
+#include "srsran/ran/qos/five_qi.h"
 #include "srsran/ran/qos/five_qi_qos_mapping.h"
 #include "srsran/ran/qos/qos_parameters.h"
 #include "srsran/ran/rrm.h"
@@ -37,7 +38,9 @@ namespace srsran {
 struct logical_channel_config {
   /// QoS specific features associated with a logical channel (only used by DRBs).
   struct qos_info {
-    /// QoS characteristics associated with the logical channel.
+    /// 5QI associated with this logical channel (for runtime QoS mapping).
+    five_qi_t five_qi = five_qi_t::invalid;    
+	  /// QoS characteristics associated with the logical channel.
     standardized_qos_characteristics qos;
     /// The ARP Priority Level indicates a priority in scheduling resources among QoS Flows. The lowest Priority Level
     /// value corresponds to the highest priority. See TS 23.501, clause 5.7.2.2.

@@ -208,8 +208,8 @@ du_ran_resource_manager_impl::update_context(du_ue_index_t                      
   du_ue_bearer_resource_update_response bearer_resp =
       bearer_res_mng.update(ue_mcg,
                             du_ue_bearer_resource_update_request{
-                                upd_req.srbs_to_setup, upd_req.drbs_to_setup, upd_req.drbs_to_mod, upd_req.drbs_to_rem},
-                            reestablished_context);
+                                upd_req.srbs_to_setup, upd_req.drbs_to_setup, upd_req.drbs_to_mod, upd_req.drbs_to_rem, ue_index},                       
+				reestablished_context);
   resp.failed_drbs = std::move(bearer_resp.drbs_failed_to_setup);
   resp.failed_drbs.insert(
       resp.failed_drbs.end(), bearer_resp.drbs_failed_to_mod.begin(), bearer_resp.drbs_failed_to_mod.end());
