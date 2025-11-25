@@ -373,6 +373,29 @@ void scheduler_time_qos::ue_ctxt::apply_5qi_based_runtime_overrides(const slice_
     // ============================================================
     // effective_5QI를 사용하여 표준 QoS 특성에서 priority를 가져옴
     // 이 priority 값이 prio_weight 계산에 사용되어 스케줄링 우선순위 결정
+    //
+    // [중요] 왜 runtime_qos.priority를 사용하는가?
+    // ============================================================
+    // 1. 원본 QoS 정보 보존:
+    //    - lc->qos->qos.priority: Core에서 받은 원본 QoS priority (변경 불가)
+    //    - lc->qos->runtime_qos.priority: 스케줄러에서 동적으로 변경 가능한 priority
+    //    - 원본 정보를 보존하면서 스케줄링에만 변경된 값을 사용
+    //
+    // 2. DSCP 기반 동적 조정:
+    //    - DRB 설정 시점에는 Core 5QI를 받지만, 이후 트래픽에서 DSCP를 관찰하면
+    //      DSCP 기반으로 5QI가 변경됨 -> 이에 맞는 priority도 변경되어야 함
+    //    - runtime_qos를 사용하면 원본을 유지하면서 스케줄러에서만 변경된 priority 사용
+    //
+    // 3. 기존 코드와의 호환성:
+    //    - 기존에는 lc->qos->qos.priority를 직접 사용했지만, 이는 Core에서 받은 고정값
+    //    - DSCP 기반 차등 자원 할당을 위해 동적으로 변경 가능한 runtime_qos 필요
+    //    - 기존 로직은 그대로 유지하면서 runtime_qos만 업데이트하여 영향 최소화
+    //
+    // 4. 스케줄링 정확성:
+    //    - 매 스케줄링 슬롯마다 최신 DSCP 값을 반영하여 정확한 우선순위 계산
+    //    - combined_prio = runtime_qos.priority × runtime_arp_priority
+    //    - 이 값이 낮을수록(우선순위 높음) 더 많은 리소스 할당
+    // ============================================================
     const standardized_qos_characteristics* qos_chars = get_5qi_to_qos_characteristics_mapping(effective_5qi);
     if (qos_chars != nullptr) {
       // Override priority with standard value, keep ARP from Core (not overridden)

@@ -37,13 +37,15 @@ namespace srsran {
 class dscp_qos_mapper
 {
 public:
+  // 싱글톤 패턴으로 구현
   /// \brief Get singleton instance
   static dscp_qos_mapper& get_instance()
   {
     static dscp_qos_mapper instance;
     return instance;
   }
-
+  
+  // UE별 DSCP 값 저장 (SDAP에서 호출)
   /// \brief Register a DSCP value observed for a specific UE
   /// This allows tracking which DSCP values are actually used by each UE
   void register_dscp_for_ue(uint32_t ue_index, uint8_t dscp)
@@ -51,7 +53,8 @@ public:
     std::lock_guard<std::mutex> lock(mutex);
     ue_dscp_map[ue_index] = dscp;
   }
-
+  
+  // UE별 DSCP 값 조회 (DU, 스케줄러에서 호출)
   /// \brief Get the DSCP value for a specific UE
   std::optional<uint8_t> get_dscp_for_ue(uint32_t ue_index) const
   {
@@ -62,7 +65,8 @@ public:
     }
     return {};
   }
-
+ 
+  // 명시적 DSCP→5QI 매핑 설정
   /// \brief Set explicit DSCP to 5QI mapping
   /// This allows custom mapping of specific DSCP values to 5QI
   /// Each DSCP value must be individually mapped - no automatic range-based mapping
@@ -71,7 +75,8 @@ public:
     std::lock_guard<std::mutex> lock(mutex);
     dscp_to_5qi_map[dscp] = five_qi;
   }
-
+  
+  // DSCP→5QI 매핑 조회
   /// \brief Map DSCP value to 5QI
   /// Uses explicit mapping table - each DSCP value must be explicitly mapped to 5QI
   /// Returns empty if no mapping exists for the given DSCP value
@@ -88,10 +93,11 @@ public:
     // No mapping found - return empty to indicate this DSCP is not mapped
     return {};
   }
-
-  /// \brief Auto-map DSCP to 5QI when first observed using standard 5QI mappings
-  /// Uses five_qi_qos_mapping to select appropriate 5QI from all available standard 5QI values
-  /// Higher DSCP values typically indicate higher priority traffic -> selects higher priority 5QI
+  
+  // 첫 관찰 시 자동 매핑 (DSCP 값에 따라 표준 5QI 선택)
+  /// \brief Auto-map DSCP to 5QI when first observed using fine-grained mapping
+  /// Uses predefined DSCP-to-5QI mapping table for more precise mapping
+  /// Falls back to standard 5QI selection if DSCP is not in the predefined table
   void auto_map_dscp_on_first_observation(uint8_t dscp, uint32_t ue_index)
   {
     std::lock_guard<std::mutex> lock(mutex);
@@ -101,53 +107,25 @@ public:
       return; // Mapping already exists, don't overwrite
     }
 
-    // Get all available standard 5QI values sorted by priority
-    std::vector<five_qi_t> available_5qi = get_all_available_5qi_values();
-    if (available_5qi.empty()) {
-      // Fallback if no 5QI available
-      dscp_to_5qi_map[dscp] = five_qi_t(9);
-      return;
+    // 공통 매핑 테이블 사용
+    const auto& mapping_table = get_dscp_to_5qi_mapping_table();
+    auto mapping_it = mapping_table.find(dscp);
+    if (mapping_it != mapping_table.end()) {    
+      five_qi_t selected_5qi = mapping_it->second;
+      // Verify the selected 5QI exists in standard mapping
+      const auto* qos_chars = get_5qi_to_qos_characteristics_mapping(selected_5qi);
+      if (qos_chars != nullptr) {
+        dscp_to_5qi_map[dscp] = selected_5qi;
+        return;
+      }
     }
-
-    // Map DSCP to 5QI based on DSCP value
-    // DSCP range is 0-63, we divide it into segments and map to different priority 5QI
-    // Higher DSCP -> higher priority 5QI (lower priority value in 5QI)
-    size_t index = 0;
-    if (dscp >= 50) {
-      // Highest priority DSCP (50-63) -> use highest priority 5QI (first in sorted list)
-      index = 0;
-    } else if (dscp >= 40) {
-      // High priority DSCP (40-49) -> use high priority 5QI
-      index = std::min(static_cast<size_t>(1), available_5qi.size() - 1);
-    } else if (dscp >= 30) {
-      // Medium-high priority DSCP (30-39) -> use medium-high priority 5QI
-      index = std::min(static_cast<size_t>(2), available_5qi.size() - 1);
-    } else if (dscp >= 20) {
-      // Medium priority DSCP (20-29) -> use medium priority 5QI
-      index = std::min(static_cast<size_t>(available_5qi.size() / 2), available_5qi.size() - 1);
-    } else if (dscp >= 10) {
-      // Low-medium priority DSCP (10-19) -> use low-medium priority 5QI
-      index = std::min(static_cast<size_t>(available_5qi.size() * 3 / 4), available_5qi.size() - 1);
-    } else {
-      // Lowest priority DSCP (0-9) -> use lowest priority 5QI (last in sorted list)
-      index = available_5qi.size() - 1;
-    }
-
-    // Select the 5QI at the calculated index
-    five_qi_t selected_5qi = available_5qi[index];
     
-    // Verify the selected 5QI exists in standard mapping
-    const auto* qos_chars = get_5qi_to_qos_characteristics_mapping(selected_5qi);
-    if (qos_chars != nullptr) {
-      dscp_to_5qi_map[dscp] = selected_5qi;
-    } else {
-      // Fallback to 5QI=9 if selected 5QI doesn't exist in standard mapping
-      dscp_to_5qi_map[dscp] = five_qi_t(9);
-    }
+    // Fallback: 매핑 테이블에 없거나 유효하지 않은 경우 기본값 사용
+    dscp_to_5qi_map[dscp] = five_qi_t(9);
   }
 
   /// \brief Map DSCP to 5QI using standard 5QI characteristics
-  /// This allows selecting the best 5QI based on DSCP value from all available standard 5QI mappings
+  /// Uses the same predefined mapping table as auto_map_dscp_on_first_observation
   std::optional<five_qi_t> map_dscp_to_5qi_using_standard_mapping(uint8_t dscp) const
   {
     std::lock_guard<std::mutex> lock(mutex);
@@ -158,35 +136,16 @@ public:
       return explicit_it->second;
     }
 
-    // Get all available standard 5QI values sorted by priority
-    std::vector<five_qi_t> available_5qi = get_all_available_5qi_values();
-    if (available_5qi.empty()) {
-      return {};
-    }
-
-    // Map DSCP to 5QI based on DSCP value
-    // DSCP range is 0-63, we divide it into segments and map to different priority 5QI
-    size_t index = 0;
-    if (dscp >= 50) {
-      index = 0; // Highest priority
-    } else if (dscp >= 40) {
-      index = std::min(static_cast<size_t>(1), available_5qi.size() - 1);
-    } else if (dscp >= 30) {
-      index = std::min(static_cast<size_t>(2), available_5qi.size() - 1);
-    } else if (dscp >= 20) {
-      index = std::min(static_cast<size_t>(available_5qi.size() / 2), available_5qi.size() - 1);
-    } else if (dscp >= 10) {
-      index = std::min(static_cast<size_t>(available_5qi.size() * 3 / 4), available_5qi.size() - 1);
-    } else {
-      index = available_5qi.size() - 1; // Lowest priority
-    }
-
-    five_qi_t selected_5qi = available_5qi[index];
-    
-    // Verify the selected 5QI exists in standard mapping
-    const auto* qos_chars = get_5qi_to_qos_characteristics_mapping(selected_5qi);
-    if (qos_chars != nullptr) {
-      return selected_5qi;
+    // 공통 매핑 테이블 사용
+    const auto& mapping_table = get_dscp_to_5qi_mapping_table();
+    auto mapping_it = mapping_table.find(dscp);
+    if (mapping_it != mapping_table.end()) {    
+      five_qi_t selected_5qi = mapping_it->second;
+      // Verify the selected 5QI exists in standard mapping
+      const auto* qos_chars = get_5qi_to_qos_characteristics_mapping(selected_5qi);
+      if (qos_chars != nullptr) {
+        return selected_5qi;
+      }
     }
 
     return {};
@@ -208,6 +167,95 @@ private:
   ~dscp_qos_mapper() = default;
   dscp_qos_mapper(const dscp_qos_mapper&) = delete;
   dscp_qos_mapper& operator=(const dscp_qos_mapper&) = delete;
+
+  /// \brief 공통 DSCP → 5QI 매핑 테이블 (모든 함수에서 공유)
+  /// five_qi_qos_mapping.cpp에 정의된 모든 5QI를 DSCP에 매핑
+  /// DSCP 값이 높을수록 더 높은 우선순위의 5QI (낮은 priority 값) 할당
+  static const std::map<uint8_t, five_qi_t>& get_dscp_to_5qi_mapping_table()
+  {
+    static const std::map<uint8_t, five_qi_t> mapping_table = {
+      // 최고 우선순위 (DSCP 56-63) -> priority 5-7
+      {63, uint_to_five_qi(69)},  // priority=5 (Non-GBR)
+      {62, uint_to_five_qi(85)},  // priority=21 (Delay Critical GBR)
+      {61, uint_to_five_qi(65)},  // priority=7 (GBR)
+      {60, uint_to_five_qi(5)},   // priority=10 (Non-GBR)
+      {59, uint_to_five_qi(67)},  // priority=15 (GBR)
+      {58, uint_to_five_qi(82)},  // priority=19 (Delay Critical GBR)
+      {57, uint_to_five_qi(1)},   // priority=20 (GBR)
+      {56, uint_to_five_qi(66)},  // priority=20 (GBR)
+      
+      // 높은 우선순위 (DSCP 48-55) -> priority 22-30
+      {55, uint_to_five_qi(83)},  // priority=22 (Delay Critical GBR)
+      {54, uint_to_five_qi(84)},  // priority=24 (Delay Critical GBR)
+      {53, uint_to_five_qi(3)},   // priority=30 (GBR)
+      {52, uint_to_five_qi(2)},   // priority=40 (GBR)
+      {51, uint_to_five_qi(4)},   // priority=50 (GBR)
+      {50, uint_to_five_qi(70)},  // priority=55 (Non-GBR)
+      {49, uint_to_five_qi(6)},   // priority=60 (Non-GBR)
+      {48, uint_to_five_qi(79)},  // priority=65 (Non-GBR)
+      
+      // 중간 우선순위 (DSCP 40-47) -> priority 68-80
+      {47, uint_to_five_qi(80)},  // priority=68 (Non-GBR)
+      {46, uint_to_five_qi(7)},   // priority=70 (Non-GBR)
+      {45, uint_to_five_qi(8)},   // priority=80 (Non-GBR)
+      {44, uint_to_five_qi(9)},   // priority=90 (Non-GBR)
+      {43, uint_to_five_qi(69)},  // priority=5 (Non-GBR) - 재사용
+      {42, uint_to_five_qi(85)},  // priority=21 (Delay Critical GBR용) - 재사
+      {41, uint_to_five_qi(65)},  // priority=7 (GBR) - 재사용
+      {40, uint_to_five_qi(5)},   // priority=10 (Non-GBR) - 재사용
+      
+      // 중간-낮은 우선순위 (DSCP 32-39)
+      {39, uint_to_five_qi(67)},  // priority=15 (GBR) - 재사용
+      {38, uint_to_five_qi(82)},  // priority=19 (Delay Critical GBR) - 재사용
+      {37, uint_to_five_qi(1)},   // priority=20 (GBR) - 재사용
+      {36, uint_to_five_qi(66)},  // priority=20 (GBR) - 재사용
+      {35, uint_to_five_qi(83)},  // priority=22 (Delay Critical GBR) - 재사용
+      {34, uint_to_five_qi(84)},  // priority=24 (Delay Critical GBR) - 재사용
+      {33, uint_to_five_qi(3)},   // priority=30 (GBR) - 재사용
+      {32, uint_to_five_qi(2)},   // priority=40 (GBR) - 재사용
+      
+      // 낮은 우선순위 (DSCP 24-31)
+      {31, uint_to_five_qi(4)},   // priority=50 (GBR) - 재사용
+      {30, uint_to_five_qi(70)},  // priority=55 (Non-GBR) - 재사용
+      {29, uint_to_five_qi(6)},   // priority=60 (Non-GBR) - 재사용
+      {28, uint_to_five_qi(79)},  // priority=65 (Non-GBR) - 재사용
+      {27, uint_to_five_qi(80)},  // priority=68 (Non-GBR) - 재사용
+      {26, uint_to_five_qi(7)},   // priority=70 (Non-GBR) - 재사용
+      {25, uint_to_five_qi(8)},   // priority=80 (Non-GBR) - 재사용
+      {24, uint_to_five_qi(9)},   // priority=90 (Non-GBR) - 재사용
+      
+      // 낮은 우선순위 (DSCP 16-23)
+      {23, uint_to_five_qi(69)},  // priority=5 (Non-GBR) - 재사용
+      {22, uint_to_five_qi(85)},  // priority=21 (Delay Critical GBR) - 재사용
+      {21, uint_to_five_qi(65)},  // priority=7 (GBR) - 재사용
+      {20, uint_to_five_qi(5)},   // priority=10 (Non-GBR) - 재사용
+      {19, uint_to_five_qi(67)},  // priority=15 (GBR) - 재사용
+      {18, uint_to_five_qi(82)},  // priority=19 (Delay Critical GBR) - 재사용
+      {17, uint_to_five_qi(1)},   // priority=20 (GBR) - 재사용
+      {16, uint_to_five_qi(66)},  // priority=20 (GBR) - 재사용
+      
+      // 최저 우선순위 (DSCP 8-15)
+      {15, uint_to_five_qi(83)},  // priority=22 (Delay Critical GBR) - 재사용
+      {14, uint_to_five_qi(84)},  // priority=24 (Delay Critical GBR) - 재사용
+      {13, uint_to_five_qi(3)},   // priority=30 (GBR) - 재사용
+      {12, uint_to_five_qi(2)},   // priority=40 (GBR) - 재사용
+      {11, uint_to_five_qi(4)},   // priority=50 (GBR) - 재사용
+      {10, uint_to_five_qi(70)},  // priority=55 (Non-GBR) - 재사용
+      {9,  uint_to_five_qi(6)},   // priority=60 (Non-GBR) - 재사용
+      {8,  uint_to_five_qi(79)},  // priority=65 (Non-GBR) - 재사용
+      
+      // 최저 우선순위 (DSCP 0-7)
+      {7,  uint_to_five_qi(80)},  // priority=68 (Non-GBR) - 재사용
+      {6,  uint_to_five_qi(7)},   // priority=70 (Non-GBR) - 재사용
+      {5,  uint_to_five_qi(8)},   // priority=80 (Non-GBR) - 재사용
+      {4,  uint_to_five_qi(9)},   // priority=90 (Non-GBR) - 재사용
+      {3,  uint_to_five_qi(9)},   // priority=90 (Non-GBR) - 재사용
+      {2,  uint_to_five_qi(9)},   // priority=90 (Non-GBR) - 재사용
+      {1,  uint_to_five_qi(9)},   // priority=90 (Non-GBR) - 재사용
+      {0,  uint_to_five_qi(9)},   // priority=90 (Non-GBR) - 재사용
+    };
+    return mapping_table;
+  }
 
   mutable std::mutex                              mutex;
   std::unordered_map<uint32_t, uint8_t>          ue_dscp_map;      ///< UE index -> DSCP mapping
