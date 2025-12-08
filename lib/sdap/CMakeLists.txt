@@ -18,9 +18,12 @@
 # and at http://www.gnu.org/licenses/.
 #
 
-set(SOURCES sdap_factory.cpp)
+set(SOURCES 
+    sdap_factory.cpp
+    throughput_controller.cpp
+)
 
 add_library(srsran_sdap STATIC ${SOURCES})
 target_link_libraries(srsran_sdap
-        srsran_ran)
-
+        srsran_ran
+        srsran_support)

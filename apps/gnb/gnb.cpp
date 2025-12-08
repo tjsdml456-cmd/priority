@@ -50,12 +50,14 @@
 #include "srsran/cu_cp/cu_cp_operation_controller.h"
 #include "srsran/du/du_high/du_high_clock_controller.h"
 #include "srsran/du/du_operation_controller.h"
+#include "srsran/ran/du_types.h"
 #include "srsran/e1ap/gateways/e1_local_connector_factory.h"
 #include "srsran/e2/e2ap_config_translators.h"
 #include "srsran/e2/gateways/e2_network_client_factory.h"
 #include "srsran/f1ap/gateways/f1c_local_connector_factory.h"
 #include "srsran/f1u/local_connector/f1u_local_connector.h"
 #include "srsran/ngap/gateways/n2_connection_client_factory.h"
+#include "srsran/sdap/throughput_controller.h"
 #include "srsran/support/backtrace.h"
 #include "srsran/support/config_parsers.h"
 #include "srsran/support/cpu_features.h"
@@ -163,6 +165,12 @@ static void register_app_logs(const gnb_appconfig&            gnb_cfg,
   auto& e2ap_logger = srslog::fetch_basic_logger("E2AP", false);
   e2ap_logger.set_level(log_cfg.e2ap_level);
   e2ap_logger.set_hex_dump_max_size(log_cfg.hex_max_size);
+
+  // Register THROUGHPUT_CTRL logger - disable console output completely
+  // Set level to none to prevent any console output
+  auto& throughput_ctrl_logger = srslog::fetch_basic_logger("THROUGHPUT_CTRL", false);
+  throughput_ctrl_logger.set_level(srslog::basic_levels::none);
+  throughput_ctrl_logger.set_hex_dump_max_size(log_cfg.hex_max_size);
 
   // Metrics log channels.
   const app_helpers::metrics_config& metrics_cfg = gnb_cfg.metrics_cfg.rusage_config.metrics_consumers_cfg;
@@ -542,6 +550,16 @@ int main(int argc, char** argv)
 
   o_cuup_obj.unit->get_operation_controller().start();
 
+  // Initialize throughput controller with UE-specific target throughput mapping
+  auto& throughput_ctrl = throughput_controller::get_instance();
+  std::unordered_map<du_ue_index_t, double> ue_target_throughput_map = {
+      {to_du_ue_index(0), 5.0},   // UE0: 5Mbps
+      {to_du_ue_index(1), 10.0},  // UE1: 10Mbps
+      {to_du_ue_index(2), 3.0}    // UE2: 3Mbps
+  };
+  throughput_ctrl.set_target_throughput_map(ue_target_throughput_map);
+  gnb_logger.info("Throughput controller initialized with UE-specific target throughput mapping");
+
   // Start processing.
   du_inst.get_operation_controller().start();
   metrics_mngr.start();
@@ -579,3 +597,4 @@ int main(int argc, char** argv)
 
   return 0;
 }
+

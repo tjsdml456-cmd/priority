@@ -39,6 +39,7 @@
 #include "du_appconfig_cli11_schema.h"
 #include "du_appconfig_translators.h"
 #include "du_appconfig_validators.h"
+#include "srsran/sdap/throughput_controller.h"
 #include "du_appconfig_yaml_writer.h"
 #include "srsran/adt/scope_exit.h"
 #include "srsran/du/du_high/du_high_clock_controller.h"
@@ -408,6 +409,16 @@ int main(int argc, char** argv)
   app_services::cmdline_command_dispatcher command_parser(
       *epoll_broker, workers.get_cmd_line_executor(), du_inst_and_cmds.commands.cmdline.commands);
 
+  // Initialize throughput controller with UE-specific target throughput mapping
+  auto& throughput_ctrl = throughput_controller::get_instance();
+  std::unordered_map<du_ue_index_t, double> ue_target_throughput_map = {
+      {to_du_ue_index(0), 5.0},   // UE0: 5Mbps
+      {to_du_ue_index(1), 10.0},  // UE1: 10Mbps
+      {to_du_ue_index(2), 3.0}    // UE2: 3Mbps  
+  };
+  throughput_ctrl.set_target_throughput_map(ue_target_throughput_map);
+  du_logger.info("Throughput controller initialized with UE-specific target throughput mapping");
+  
   // Start processing.
   du_inst.get_operation_controller().start();
 
