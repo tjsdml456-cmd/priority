@@ -1,6 +1,7 @@
-# UE별로 목표 스루풋을 고정해 두고, 그 목표 스루풋에 수렴하도록 DSCP(→ Priority)를 PID 제어로 동적으로 조정하는 구조 설명
+# UE별로 목표 스루풋을 고정해 두고, 그 목표 스루풋에 수렴하도록 DSCP(→ Priority)를 PID 제어로 동적으로 조정하는 구조설명
 
-### 1. Throughput 구하는 방법 
+
+### 1. Throughput이란구하는 법
 
 **`scheduler_ue_metrics.dl_brate_kbps`**: 
 - 각 UE가 **실제로 받은** 다운링크 비트레이트 (kbps 단위)
@@ -28,32 +29,98 @@ dl_brate_kbps = (sum_dl_tb_bytes * 8) / metric_report_period.count();
 // metric_report_period.count(): 리포트 기간 (밀리초, 예: 1000ms)
 ```
 
-#### 최대 스루풋
 
-최대 스루풋은 다음과 같은 요인들에 의해 결정됩니다:
+#### 최대 스루풋과 TBS의 관계
 
-1. **대역폭 (Bandwidth)**
-   - 일반적인 설정: 10MHz, 20MHz, 100MHz 등
-   - 대역폭이 클수록 사용 가능한 PRB(Physical Resource Block) 수가 증가
-   - 예: 10MHz = 52 PRB, 20MHz = 106 PRB, 100MHz = 273 PRB (SCS 30kHz 기준)
+**핵심**: 스루풋 = TBS의 초당 양입니다. 최대 스루풋은 TBS size를 결정하는 요소들에 의해 결정됩니다.
 
-2. **변조 방식 (Modulation)**
-   - QAM64: 최대 6 bits/symbol
-   - QAM256: 최대 8 bits/symbol (더 높은 스루풋 가능)
+**스루풋과 TBS의 관계:**
+```
+스루풋 (kbps) = (성공한 TBS들의 총 바이트 수 × 8) / 리포트 기간(밀리초)
+             = TBS 크기 × 초당 전송 횟수
+```
 
-3. **MIMO 레이어 수 (Layers)**
+**TBS (Transport Block Size) 결정 요소:**
+
+TBS size는 다음 요소들에 의해 결정됩니다 (`lib/ran/sch/tbs_calculator.cpp:124-143`):
+
+1. **PRB 수 (Physical Resource Blocks)**
+   - 대역폭에 의해 결정: 10MHz = 52 PRB, 20MHz = 106 PRB, 100MHz = 273 PRB (SCS 30kHz 기준)
+   - PRB 수가 많을수록 TBS가 증가
+
+2. **MCS (Modulation and Coding Scheme)**
+   - 변조 방식: QAM64 (6 bits/symbol), QAM256 (8 bits/symbol)
+   - Code Rate: MCS가 높을수록 더 높은 code rate (더 많은 데이터)
+   - 채널 상태(CQI)에 따라 자동 선택
+
+3. **레이어 수 (Layers)**
+   - MIMO 구성: 1x1 (1 layer), 2x2 (2 layers), 4x4 (4 layers) 등
+   - 레이어 수가 많을수록 TBS가 증가 (거의 비례)
+
+4. **심볼 수 (Symbols per slot)**
+   - 일반적으로 14 symbols per slot (PDSCH)
+   - DMRS, 오버헤드 제외하면 실제 데이터 심볼 수 감소
+
+**TBS 계산 공식** (`tbs_calculator.cpp:124-143`):
+```cpp
+// Step 1: RE (Resource Element) 수 계산
+// NOF_SUBCARRIERS_PER_RB = 12 (리소스 블록당 서브캐리어 수)
+nof_re_prime = NOF_SUBCARRIERS_PER_RB × nof_symb_sh - nof_dmrs_prb - nof_oh_prb
+              = 12 × symbols_per_slot - DMRS_per_PRB - overhead_per_PRB
+nof_re = min(156, nof_re_prime) × n_prb
+// n_prb (PRB_count): PRB 수 (대역폭에 의해 결정)
+// nof_symb_sh (symbols_per_slot): 일반적으로 14 (PDSCH)
+// nof_dmrs_prb, nof_oh_prb: DMRS 및 오버헤드
+
+// Step 2: TBS (bits) 계산
+nof_info = scaling × nof_re × tcr × modulation_level × nof_layers
+         = scaling × nof_re × code_rate × bits_per_symbol × layers
+// scaling: TB scaling factor (일반적으로 1.0, tb_scaling_field에 의해 결정)
+// tcr (code_rate): MCS에 포함된 정규화된 code rate (0.0 ~ 1.0)
+// modulation_level (bits_per_symbol): 변조 방식 (QAM64=6, QAM256=8)
+// nof_layers (layers): MIMO 레이어 수 (1, 2, 4, ...)
+
+// Step 3: 표준 테이블에 따라 TBS 양자화
+if (nof_info <= 3824) {
+  TBS_bits = tbs_calculator_step3(nof_info)  // 표준 테이블 조회
+} else {
+  TBS_bits = tbs_calculator_step4(nof_info, tcr)  // 복잡한 양자화 로직
+}
+
+// Step 4: TBS (bytes) 변환
+TBS_bytes = TBS_bits / 8
+```
+
+**결론**: 
+- **스루풋 = TBS/초** (TBS 크기 × 초당 전송 횟수)
+- **TBS size**는 **PRB 수, MCS(변조 방식 + code rate), 레이어 수** 등에 의해 결정
+- **최대 스루풋** = 최대 TBS × 초당 최대 전송 횟수 (대역폭, 변조, 레이어, TDD/FDD 등에 의해 결정)
+
+**최대 스루풋 계산:**
+
+최대 스루풋을 결정하는 요인들:
+
+1. **대역폭 → PRB 수**
+   - 대역폭이 클수록 PRB 수 증가 → TBS 증가 → 스루풋 증가
+
+2. **변조 방식 (MCS의 일부)**
+   - QAM64: 6 bits/symbol
+   - QAM256: 8 bits/symbol (더 높은 TBS 가능)
+
+3. **MIMO 레이어 수**
    - 1x1 (SISO): 1개 레이어
-   - 2x2 MIMO: 2개 레이어 (스루풋 약 2배)
-   - 4x4 MIMO: 4개 레이어 (스루풋 약 4배)
+   - 2x2 MIMO: 2개 레이어 (TBS 약 2배)
+   - 4x4 MIMO: 4개 레이어 (TBS 약 4배)
    - 최대 8개 레이어까지 지원
 
 4. **TDD/FDD 설정**
    - FDD: DL/UL 동시 전송 가능 (더 높은 DL 스루풋)
    - TDD: DL/UL 슬롯 비율에 따라 달라짐 (예: DL 70%, UL 30%)
+   - TDD에서는 DL 슬롯이 많을수록 초당 전송 기회 증가 → 스루풋 증가
 
-5. **채널 상태 (CQI, MCS)**
+5. **채널 상태 (CQI → MCS)**
    - 채널 상태가 좋을수록 높은 MCS 사용 가능
-   - 높은 MCS = 더 많은 데이터 전송
+   - 높은 MCS = 더 높은 변조 + 더 높은 code rate → 더 큰 TBS
 
 **이론적 최대 스루풋 계산 예시 (20MHz, SCS 30kHz, QAM256, 4x4 MIMO, FDD):**
 ```
