@@ -1,4 +1,4 @@
-# Throughput Controller 동작 설명
+# UE별로 목표 스루풋을 고정해 두고, 그 목표 스루풋에 수렴하도록 DSCP(→ Priority)를 PID 제어로 동적으로 조정하는 구조설명
 
 ## 목차
 
