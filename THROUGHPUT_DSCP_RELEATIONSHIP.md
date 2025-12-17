@@ -116,6 +116,127 @@ dl_brate_kbps = (sum_dl_tb_bytes * 8) / metric_report_period.count();
 - 10MHz, QAM64, 1x1, FDD: 약 30-50 Mbps
 - Throughput Controller의 목표 스루풋 (1.5Mbps, 2.0Mbps)은 이러한 최대 스루풋보다 훨씬 낮게 설정되어 있습니다.
 
+#### 스루풋 제어 메커니즘: 목표 스루풋 → Priority → PRB → TBS → 스루풋
+
+**핵심 개념:**
+
+스루풋 제어는 다음 경로로 동작합니다:
+
+```
+1. 목표 스루풋 설정 (예: UE0=1.5Mbps, UE1=2.0Mbps, UE2=1.0Mbps)
+   ↓
+2. 실제 스루풋 측정 (dl_brate_kbps = TBS들의 초당 총 바이트 수)
+   ↓
+3. PID 제어기로 Priority 계산 (target_priority)
+   ↓
+4. 스케줄러에서 Priority 적용 (runtime_qos.priority)
+   ↓
+5. final_priority 계산 (pf_weight × gbr_weight × prio_weight × delay_weight)
+   ↓
+6. 스케줄러가 final_priority로 UE 선택 및 PRB 할당
+   ↓
+7. PRB 수에 따라 TBS 결정 (TBS = f(PRB, MCS, 레이어, ...))
+   ↓
+8. TBS가 증가하면 스루풋 증가
+```
+
+**중요한 질문들:**
+
+**Q1: 왜 du.cpp와 gnb.cpp에서 UE 인덱스당 스루풋을 설정했는가?**
+
+**A:** UE가 등록되기 **전에** 목표 스루풋을 미리 설정하기 위함입니다.
+
+- **코드 위치**: `du.cpp:412-419`, `gnb.cpp:550-557`
+- **설정 시점**: `du_inst.get_operation_controller().start()` **전에** 설정
+- **이유**: 
+  - `throughput_controller.cpp:94-100`에서 UE 초기화 시점에 확인
+  - UE가 등록될 때 `update_throughput()`이 호출되면, 미리 설정된 `ue_target_throughput_map`에서 해당 UE의 목표 스루풋을 찾아 자동 적용
+  - 만약 UE 등록 후에 설정하면, 이미 초기화된 UE는 기본값을 사용하게 됨
+
+```cpp
+// UE 초기화 시 (throughput_controller.cpp:94-100)
+auto preconfigured_it = ue_target_throughput_map.find(metrics.ue_index);
+if (preconfigured_it != ue_target_throughput_map.end()) {
+  new_state.target_mbps = preconfigured_it->second;  // 미리 설정된 값 사용
+} else {
+  new_state.target_mbps = cfg.target_throughput_mbps;  // 기본값 사용
+}
+```
+
+**Q2: UE당 스루풋을 설정했으면 무엇을 바꿔야 하는가?**
+
+**A:** **Priority**를 변경해야 합니다.
+
+- 목표 스루풋을 설정하면 → PID 제어기가 `target_priority`를 계산
+- 이 `target_priority`가 스케줄러의 `runtime_qos.priority`에 적용됨 (`scheduler_time_qos.cpp:395-409`)
+- Priority가 변경되면 → `final_priority`가 변경됨 (`scheduler_time_qos.cpp:252`)
+- `final_priority`가 높은 UE가 스케줄러에서 우선 선택되어 더 많은 PRB 할당
+
+**Q3: 스루풋 = TBS의 초당 갯수?**
+
+**A:** 맞습니다. 정확히는:
+
+```
+스루풋 (kbps) = (성공한 TBS들의 총 바이트 수 × 8) / 리포트 기간(밀리초)
+```
+
+- **코드 위치**: `scheduler_metrics_handler.cpp:643, 246-254`
+- `sum_dl_tb_bytes`: HARQ ACK를 받은 TBS들의 총 바이트 수
+- 리포트 기간 동안 누적된 값 (예: 1000ms = 1초)
+- **예시**: 1초 동안 150,000 bytes의 TBS가 성공 → `(150,000 × 8) / 1000 = 1,200 kbps = 1.2 Mbps`
+
+**Q4: DSCP로 PRB를 직접 조절하는 것인가?**
+
+**A:** 직접 조절이 아니라 **간접적으로** 조절합니다:
+
+```
+DSCP 변경
+  ↓
+Priority 변경 (DSCP → 5QI → Priority, 또는 Throughput Controller가 직접 설정)
+  ↓
+final_priority 변경 (스케줄러에서 계산)
+  ↓
+스케줄러가 final_priority 높은 UE를 우선 선택
+  ↓
+우선 선택된 UE가 더 많은 PRB 할당받음
+```
+
+- DSCP 자체가 PRB 수를 직접 제어하는 것이 아님
+- Priority → final_priority → 스케줄링 우선순위를 통해 PRB 할당에 영향을 줌
+
+**Q5: QoS를 이용한 PRB 조절로 TBS의 초당 갯수를 조절하는 것이 가능한가?**
+
+**A:** **가능합니다.**
+
+**코드 흐름:**
+
+1. **Priority → final_priority** (`scheduler_time_qos.cpp:252`)
+   ```cpp
+   final_priority = combine_qos_metrics(pf_weight, gbr_weight, prio_weight, delay_weight);
+   ```
+
+2. **final_priority → UE 선택** (`intra_slice_scheduler.cpp:463`)
+   - 스케줄러가 `final_priority`가 높은 UE를 우선 선택
+   - Priority queue에서 높은 priority를 가진 UE가 먼저 스케줄링됨
+
+3. **PRB 할당 → TBS 계산** (`tbs_calculator.cpp:124-143`)
+   ```cpp
+   TBS = f(PRB 수, MCS, 레이어 수, 심볼 수, ...)
+   ```
+   - PRB 수가 증가하면 TBS가 증가
+   - MCS가 높으면 (더 높은 변조 방식) TBS가 증가
+
+4. **TBS → 스루풋**
+   - PRB ↑ → TBS ↑ → 스루풋 ↑
+   - 더 많은 PRB를 할당받으면 더 큰 TBS를 전송할 수 있고, 결과적으로 스루풋이 증가
+
+**결론:**
+
+- ✅ **가능**: Priority → final_priority → PRB 할당 → TBS → 스루풋 경로로 제어 가능
+- ⚠️ **제한사항**: 
+  - 채널 상태(MCS 변화), 다른 UE의 경쟁, 스케줄링 제약 등이 결과에 영향을 줄 수 있음
+  - 완벽하게 정확한 스루풋을 보장하지는 못함 (PID 제어기로 목표값에 근사)
+
 ### 3. Throughput → Priority → DSCP 조정 관계
 
 **중요**: DSCP 값 자체가 우선순위를 결정하는 것이 아니라, **DSCP → 5QI → Priority 매핑**을 통해 우선순위가 결정됩니다. Priority 값이 **낮을수록 높은 우선순위**입니다.
@@ -125,6 +246,16 @@ dl_brate_kbps = (sum_dl_tb_bytes * 8) / metric_report_period.count();
 │  제어 루프 (Control Loop) - Priority 기반               │
 └─────────────────────────────────────────────────────────┘
 
+[0단계] 초기화: UE별 목표 스루풋 설정
+  파일: apps/du/du.cpp 또는 apps/gnb/gnb.cpp
+  ↓
+  UE 등록 전에 목표 스루풋 미리 설정
+  예: UE0=1.5Mbps, UE1=2.0Mbps, UE2=1.0Mbps
+  ↓
+  throughput_ctrl.set_target_throughput_map(ue_target_throughput_map)
+  ↓
+  (UE가 등록되면 자동으로 해당 목표 스루풋 적용)
+  ↓
 [1단계] 스루풋 측정
   파일: lib/scheduler/logging/scheduler_metrics_handler.cpp
   ↓
