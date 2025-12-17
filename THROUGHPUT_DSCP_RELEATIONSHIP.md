@@ -520,4 +520,4 @@ std::unordered_map<du_ue_index_t, double> ue_target_map = {
 throughput_ctrl.set_target_throughput_map(ue_target_map);
 ```
 
-
+위에서 설명한 기본 설정을 조절해 가면서 내가 설정한 ue별 스루풋에 도달하는 것이 목표임.
