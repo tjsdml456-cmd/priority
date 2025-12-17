@@ -1,191 +1,124 @@
-# UE별로 목표 스루풋을 고정해 두고, 그 목표 스루풋에 수렴하도록 DSCP(→ Priority)를 PID 제어로 동적으로 조정하는 구조설명
+# Throughput Controller 동작 설명
 
+## 목차
 
-### 1. Time-Line
+1. [개요](#개요)
+2. [스루풋 계산](#스루풋-계산)
+3. [PID 제어기](#pid-제어기)
+4. [Priority 기반 제어](#priority-기반-제어)
+5. [전체 제어 루프](#전체-제어-루프)
+6. [코드 흐름](#코드-흐름)
+7. [설정 방법](#설정-방법)
+
+---
+
+## 개요
+
+### Throughput Controller란?
+
+Throughput Controller는 각 UE의 실제 다운링크 스루풋을 측정하고, 목표 스루풋과 비교하여 PID 제어기를 통해 Priority를 조정하는 시스템입니다.
+
+**핵심 개념:**
+- **목표 스루풋 설정**: UE별로 독립적인 목표 스루풋 설정 (예: UE0=1.5Mbps, UE1=2.0Mbps)
+- **실제 스루풋 측정**: 스케줄러 메트릭에서 `dl_brate_kbps` 측정
+- **PID 제어기**: 오차를 계산하여 Priority 조정
+- **스케줄러 반영**: Priority → PRB 할당 → TBS → 스루풋
+
+### UE별 독립적 제어
+
+각 UE는 독립적인 PID 상태를 가지며, 독립적으로 제어됩니다:
 
 ```
-[0단계] 초기화: UE별 목표 스루풋 설정
-  파일: apps/du/du.cpp 또는 apps/gnb/gnb.cpp
-  ↓
-  UE 등록 전에 목표 스루풋 미리 설정
-  예: UE0=1.5Mbps, UE1=2.0Mbps, UE2=1.0Mbps
-  ↓
-  throughput_ctrl.set_target_throughput_map(ue_target_throughput_map)
-  ↓
-  (UE가 등록되면 자동으로 해당 목표 스루풋 적용)
-  ↓
-[1단계] 스루풋 측정
-  파일: lib/scheduler/logging/scheduler_metrics_handler.cpp
-  ↓
-  스케줄러 메트릭: dl_brate_kbps (예: 1200 kbps = 1.2Mbps)
-  ↓
-[2단계] 오차 계산
-  파일: lib/sdap/throughput_controller.cpp
-  ↓
-  error = 목표 스루풋 - 현재 스루풋
-  error = 1.5Mbps - 1.2Mbps = 0.3Mbps (부족)
-  ↓
-[3단계] PID 제어기
-  파일: lib/sdap/throughput_controller.cpp
-  ↓
-  PID_output = Kp×error + Ki×integral + Kd×derivative
-  예: PID_output = 1.0×0.3 + 0.1×0.5 + 0.01×0.05 = 0.35
-  ↓
-  [PID 제어기 상세 설명]
-  - error: 현재 오차 = 목표 스루풋 - 현재 스루풋 (예: 1.5 - 1.2 = 0.3Mbps)
-  - integral: 누적 오차 (과거 오차들의 합)
-  - derivative: 오차 변화율 = 현재 오차 - 이전 오차
-  - Kp (Proportional gain): 비례 게인, 오차에 즉각 반응 (기본값: 1.0)
-  - Ki (Integral gain): 적분 게인, 누적 오차 보정 (기본값: 0.1)
-  - Kd (Derivative gain): 미분 게인, 오버슈트 방지 (기본값: 0.01)
-  ↓
-[4단계] 현재 DSCP의 Priority 확인
-  파일: lib/sdap/throughput_controller.cpp
-  ↓
-  현재 DSCP=32 → 5QI=2 → Priority=40
-  ↓
-[5단계] Priority 변화 계산
-  파일: lib/sdap/throughput_controller.cpp
-  ↓
-  priority_change = round(PID_output × priority_scale)
-  priority_change = round(0.35 × 10) = 4
-  목표 Priority = 40 - 4 = 36 (우선순위 증가)
-  (Priority가 낮을수록 높은 우선순위이므로 감소)
-  ↓
-[6단계] 목표 Priority에 가장 가까운 DSCP 찾기
-  파일: lib/sdap/throughput_controller.cpp
-  ↓
-  DSCP 범위(0-63) 탐색하여 Priority=30에 가장 가까운 5QI 찾기
-  예: DSCP=33 → 5QI=3 → Priority=30 (매칭!)
-  ↓
-[7단계] DSCP 업데이트
-  파일: lib/sdap/throughput_controller.cpp
-  ↓
-  new_dscp = 33
-  ↓
-[8단계] 스케줄러 우선순위 변경
-  파일: lib/scheduler/policy/scheduler_time_qos.cpp
-  ↓
-  Throughput Controller가 계산한 target_priority=30을 스케줄러에서 직접 사용
-  (DSCP → 5QI → Priority 경로 우회)
-  combined_prio = priority × ARP_priority
-  낮은 combined_prio = 높은 우선순위
-  ↓
-[9단계] 리소스 할당 증가
-  파일: lib/scheduler/policy/scheduler_time_qos.cpp
-  ↓
-  더 많은 PRB 할당 → 더 높은 스루풋
-  ↓
-[다음 주기] 새로운 스루풋 측정 (1초 후)
-```
+UE0: {
+  목표 스루풋: 1.5Mbps
+  PID 상태: {error, integral, last_error, target_priority, current_dscp}
+}
 
-### 2. 구체적인 예시 (UE 3개)
-
-**참고**: 아래 예시는 PID 제어기의 작동 방식을 설명하기 위한 예시입니다. 실제 코드에서 사용하는 값과는 다를 수 있습니다 (실제 코드 예시: UE0=1.5Mbps, UE1=2.0Mbps, UE2=1.0Mbps).
-
-#### 시나리오: 3개 UE, 모두 목표 5Mbps (예시)
-
-**초기 상태 (t=0):**
-```
-UE0: 현재=4.2Mbps, 목표=5.0Mbps, DSCP=32
-UE1: 현재=5.8Mbps, 목표=5.0Mbps, DSCP=32
-UE2: 현재=5.0Mbps, 목표=5.0Mbps, DSCP=32
-```
-
-**PID 제어기 동작 (t=1초):**
-
-**`PID_output = Kp×error + Ki×integral + Kd×derivative`**
-
-**UE0 (부족한 경우):**
-- error = 5.0 - 4.2 = +0.8Mbps (양수 = 부족)
-- PID_output = +1.0
-- 현재: DSCP=32 → 5QI=2 → Priority=40
-- Priority 변화: -10 (우선순위 증가, priority 값 감소)
-- 목표 Priority: 40 - 10 = 30
-- 탐색 결과: DSCP=33 → 5QI=3 → Priority=30 (매칭!)
-- DSCP: 32 → 33
-- 결과: 스케줄러가 더 많은 리소스 할당 → 스루풋 증가 예상
-
-**UE1 (과도한 경우):**
-- error = 5.0 - 5.8 = -0.8Mbps (음수 = 과도)
-- PID_output = -1.0
-- 현재: DSCP=32 → 5QI=2 → Priority=40
-- Priority 변화: +10 (우선순위 감소, priority 값 증가)
-- 목표 Priority: 40 + 10 = 50
-- 탐색 결과: DSCP=31 → 5QI=4 → Priority=50 (매칭!)
-- DSCP: 32 → 31
-- 결과: 스케줄러가 더 적은 리소스 할당 → 스루풋 감소 예상
-
-**UE2 (정확한 경우):**
-- error = 5.0 - 5.0 = 0.0Mbps (정확)
-- PID_output = 0.0
-- DSCP: 32 → 32 (변화 없음)
-- 결과: 현재 상태 유지
-
-**다음 주기 (t=2초):**
-```
-UE0: 현재=4.5Mbps (개선됨), 목표=5.0Mbps, DSCP=33
-UE1: 현재=5.5Mbps (감소함), 목표=5.0Mbps, DSCP=31
-UE2: 현재=5.0Mbps (유지), 목표=5.0Mbps, DSCP=32
-```
-
-### 3. 코드에서의 실제 동작
-
-**`scheduler_metrics_handler::report_metrics()`:**
-```cpp
-for (ue_metric_context& ue : ues) {
-  // 각 UE의 현재 스루풋 계산
-  scheduler_ue_metrics metrics = ue.compute_report(...);
-  // metrics.dl_brate_kbps = 실제 측정된 스루풋 (kbps)
-  
-  // Throughput Controller에 전달
-  throughput_ctrl.update_throughput(metrics);
+UE1: {
+  목표 스루풋: 2.0Mbps
+  PID 상태: {error, integral, last_error, target_priority, current_dscp}
 }
 ```
 
-**`throughput_controller::update_throughput()`:**
+---
+
+## 스루풋 계산
+
+### 스루풋이란?
+
+**`scheduler_ue_metrics.dl_brate_kbps`**: 각 UE가 실제로 받은 다운링크 비트레이트 (kbps 단위)
+
+**코드 위치**: `lib/scheduler/logging/scheduler_metrics_handler.cpp:643, 246-254`
+
+### 계산 방법
+
 ```cpp
-// 1. 현재 스루풋 추출
-double current_mbps = metrics.dl_brate_kbps / 1000.0;  // kbps → Mbps
+// 1. HARQ ACK를 받은 TBS만 누적
+void handle_dl_harq_ack(du_ue_index_t ue_index, bool ack, units::bytes tbs) {
+  if (ack) {
+    u.data.sum_dl_tb_bytes += tbs.value();
+  }
+}
 
-// 2. 목표와 비교
-double error = target_mbps - current_mbps;
-
-// 3. PID 제어기로 DSCP 조정
-uint8_t new_dscp = compute_dscp_adjustment(state, current_mbps, target_mbps);
-
-// 4. DSCP 업데이트 (dscp_qos_mapper에 저장)
-mapper.register_dscp_for_ue(ue_index, new_dscp);
+// 2. 리포트 기간 동안의 평균 스루풋 계산
+dl_brate_kbps = (sum_dl_tb_bytes * 8) / metric_report_period.count();
 ```
 
-**스케줄러에서 사용:**
-```cpp
-// scheduler_time_qos.cpp에서
-std::optional<uint8_t> ue_dscp = mapper.get_dscp_for_ue(ue_index);
-// DSCP → 5QI → Priority → 리소스 할당
+**공식:**
+```
+스루풋 (kbps) = (성공한 TBS들의 총 바이트 수 × 8) / 리포트 기간(밀리초)
 ```
 
-## PID 제어기 상세 설명
+**예시:**
+- 리포트 기간: 1000ms (1초)
+- 성공한 TBS 총 바이트: 150,000 bytes
+- `dl_brate_kbps = (150,000 × 8) / 1000 = 1,200 kbps = 1.2 Mbps`
 
-### 왜 PID 제어기를 사용하는가?
+**중요:**
+- HARQ ACK를 받은 TBS만 카운트 (NACK/타임아웃 제외)
+- 리포트 기간 동안 누적된 값이므로 평균 스루풋
+- 리포트 기간 종료 후 `sum_dl_tb_bytes` 리셋
 
-**문제 상황**: 목표 스루풋(예: 5Mbps)을 달성하기 위해 단순히 오차에 비례해서 조정하면:
+### 스루풋 = TBS의 초당 양
 
-1. **P (Proportional)만 사용하는 경우**:
-   - 오차가 0.8Mbps → 조정량 증가
-   - 오차가 0.1Mbps → 조정량 감소
-   - **문제**: 목표에 가까워져도 약간의 오차가 남음 (정상 상태 오차)
-   - **문제**: 오버슈트 발생 가능 (목표를 넘어서거나 진동)
+**핵심**: 스루풋은 TBS(Transport Block Size)의 초당 양입니다.
 
-2. **P + I (Proportional + Integral)를 사용하는 경우**:
-   - 누적 오차를 보정하여 정상 상태 오차 제거
-   - **문제**: 오차가 계속 누적되어 과도한 조정이 일어날 수 있음
+```
+스루풋 = TBS 크기 × 초당 전송 횟수
+```
 
-3. **P + I + D (PID)를 사용하는 경우**:
-   - P: 현재 오차에 즉각 반응
-   - I: 누적 오차 보정 (정상 상태 오차 제거)
-   - D: 오차 변화율에 반응 (오버슈트 방지)
-   - **결과**: 안정적이고 정확한 제어
+**TBS 결정 요소** (`lib/ran/sch/tbs_calculator.cpp:124-143`):
+
+1. **PRB 수**: 대역폭에 의해 결정 (10MHz=52 PRB, 20MHz=106 PRB)
+2. **MCS**: 변조 방식(QAM64=6 bits/symbol, QAM256=8 bits/symbol) + Code Rate
+3. **레이어 수**: MIMO 구성 (1x1=1 layer, 2x2=2 layers, 4x4=4 layers)
+4. **심볼 수**: 일반적으로 14 symbols per slot (PDSCH)
+
+**TBS 계산 공식:**
+```cpp
+// Step 1: RE 수 계산
+nof_re_prime = 12 × symbols_per_slot - DMRS_per_PRB - overhead_per_PRB
+nof_re = min(156, nof_re_prime) × PRB_count
+
+// Step 2: TBS (bits) 계산
+nof_info = scaling × nof_re × code_rate × bits_per_symbol × layers
+TBS_bits = quantize(nof_info)  // 표준 테이블 양자화
+
+// Step 3: TBS (bytes) 변환
+TBS_bytes = TBS_bits / 8
+```
+
+---
+
+## PID 제어기
+
+### PID 제어기가 필요한 이유
+
+**문제**: 단순 비례 제어만 사용하면
+- 목표에 가까워져도 약간의 오차가 남음 (정상 상태 오차)
+- 오버슈트 발생 가능 (진동)
+
+**해결**: P(비례) + I(적분) + D(미분) 조합으로 안정적이고 정확한 제어
 
 ### PID 계산식
 
@@ -193,371 +126,402 @@ std::optional<uint8_t> ue_dscp = mapper.get_dscp_for_ue(ue_index);
 PID_output = Kp × error + Ki × integral + Kd × derivative
 ```
 
-### 각 항목의 의미
+### 각 항목 설명
 
-#### 1. **P (Proportional) - 비례 항**
+#### 1. P (Proportional) - 비례 항
+
 ```
 P_term = Kp × error
 ```
 
-**의미**: 현재 오차에 비례하여 즉각 반응
 - **error**: 목표 스루풋 - 현재 스루풋
-- **Kp (Proportional gain)**: 비례 게인 (기본값: 1.0)
-- **역할**: 오차가 클수록 더 큰 조정
+- **Kp**: 비례 게인 (기본값: 1.0)
+- **역할**: 현재 오차에 즉각 반응
 
-**예시**:
-- error = 0.8Mbps (부족) → P_term = 1.0 × 0.8 = 0.8
-- error = 0.2Mbps (부족) → P_term = 1.0 × 0.2 = 0.2
+**예시:**
+- error = 0.3Mbps (부족) → P_term = 1.0 × 0.3 = 0.3
 
-**문제점**: 
-- 정상 상태 오차가 남을 수 있음
-- 오버슈트 가능 (너무 빠른 반응)
+#### 2. I (Integral) - 적분 항
 
-#### 2. **I (Integral) - 적분 항**
 ```
 I_term = Ki × integral
 integral = integral + error  (누적)
 ```
 
-**의미**: 과거 오차들의 누적 합을 보정
 - **integral**: 누적 오차 (과거 오차들의 합)
-- **Ki (Integral gain)**: 적분 게인 (기본값: 0.1)
+- **Ki**: 적분 게인 (기본값: 0.1)
 - **역할**: 정상 상태 오차 제거, 지속적인 오차 보정
 
-**예시**:
-- 1초차: error = 0.8 → integral = 0.8
-- 2초차: error = 0.5 → integral = 0.8 + 0.5 = 1.3
-- 3초차: error = 0.2 → integral = 1.3 + 0.2 = 1.5
-- I_term = 0.1 × 1.5 = 0.15
+**예시:**
+- 1초차: error = 0.3 → integral = 0.3 → I_term = 0.1 × 0.3 = 0.03
+- 2초차: error = 0.2 → integral = 0.5 → I_term = 0.1 × 0.5 = 0.05
+- 3초차: error = 0.1 → integral = 0.6 → I_term = 0.1 × 0.6 = 0.06
 
-**문제점**:
-- **Windup**: 오차가 계속 누적되어 과도한 조정
-- **해결**: Anti-windup (integral을 -100 ~ +100으로 제한)
+**Anti-windup**: integral을 -100 ~ +100으로 제한 (`throughput_controller.cpp:249-250`)
 
-#### 3. **D (Derivative) - 미분 항**
+#### 3. D (Derivative) - 미분 항
+
 ```
 D_term = Kd × (error - last_error)
 ```
 
-**의미**: 오차의 변화율에 반응하여 오버슈트 방지
 - **derivative**: 오차 변화율 = 현재 오차 - 이전 오차
-- **Kd (Derivative gain)**: 미분 게인 (기본값: 0.01)
+- **Kd**: 미분 게인 (기본값: 0.01)
 - **역할**: 오버슈트 방지, 안정성 향상
 
-**예시**:
-- 이전 오차: 1.0Mbps
-- 현재 오차: 0.8Mbps
-- derivative = 0.8 - 1.0 = -0.2 (개선 중)
+**예시:**
+- 이전 오차: 0.5Mbps
+- 현재 오차: 0.3Mbps
+- derivative = 0.3 - 0.5 = -0.2 (개선 중)
 - D_term = 0.01 × (-0.2) = -0.002 (약간의 제동)
 
-**문제점**:
-- 노이즈에 민감할 수 있음
-- 따라서 Kd 값이 작게 설정됨 (0.01)
+### 실제 계산 예시
 
-### 게인 값 튜닝 가이드
+**시나리오**: 목표 1.5Mbps, 현재 1.2Mbps
 
-**기본 설정** (안정적인 제어):
+```
+[1초차 계산]
+- error = 1.5 - 1.2 = 0.3Mbps
+- P_term = 1.0 × 0.3 = 0.3
+- integral = 0.0 + 0.3 = 0.3
+- I_term = 0.1 × 0.3 = 0.03
+- derivative = 0.3 - 0.0 = 0.3
+- D_term = 0.01 × 0.3 = 0.003
+- PID_output = 0.3 + 0.03 + 0.003 = 0.333
+
+[2초차 계산 (스루풋이 1.35Mbps로 개선)]
+- error = 1.5 - 1.35 = 0.15Mbps
+- P_term = 1.0 × 0.15 = 0.15
+- integral = 0.3 + 0.15 = 0.45
+- I_term = 0.1 × 0.45 = 0.045
+- derivative = 0.15 - 0.3 = -0.15 (개선 중)
+- D_term = 0.01 × (-0.15) = -0.0015
+- PID_output = 0.15 + 0.045 - 0.0015 = 0.1935
+```
+
+**코드 위치**: `lib/sdap/throughput_controller.cpp:240-258`
+
+```cpp
+// Calculate error
+state.error = target_mbps - current_mbps;
+
+// Proportional term
+double p_term = cfg.kp * state.error;
+
+// Integral term (with anti-windup)
+state.integral += state.error;
+state.integral = std::clamp(state.integral, -max_integral, max_integral);
+double i_term = cfg.ki * state.integral;
+
+// Derivative term
+double d_term = cfg.kd * (state.error - state.last_error);
+state.last_error = state.error;
+
+// PID output
+double pid_output = p_term + i_term + d_term;
+```
+
+### 기본 게인 값
+
+**기본 설정** (`include/srsran/sdap/throughput_controller.h:43-45`):
 - Kp = 1.0
 - Ki = 0.1
 - Kd = 0.01
 
-**빠른 응답이 필요한 경우**:
-- Kp = 2.0 (더 큰 즉각 반응)
-- Ki = 0.2 (더 빠른 누적 보정)
-- Kd = 0.02 (더 강한 오버슈트 방지)
+---
 
-**안정적인 제어가 중요한 경우**:
-- Kp = 0.5 (더 작은 즉각 반응)
-- Ki = 0.05 (더 느린 누적 보정)
-- Kd = 0.005 (더 약한 오버슈트 방지)
+## Priority 기반 제어
 
-## 사용 방법
+### Priority의 의미
 
-### 기본 설정
+**중요**: Priority 값이 **낮을수록 높은 우선순위**입니다.
 
-```cpp
-#include "srsran/sdap/throughput_controller.h"
-
-// 싱글톤 인스턴스 가져오기
-auto& controller = throughput_controller::get_instance();
-
-// 기본 설정
-throughput_controller::config cfg;
-cfg.target_throughput_mbps = 1.5;  // 목표 스루풋: 1.5Mbps
-cfg.kp = 1.0;   // Proportional gain
-cfg.ki = 0.1;   // Integral gain
-cfg.kd = 0.01;  // Derivative gain
-cfg.control_period_ms = std::chrono::milliseconds(1000);  // 1초마다 조절
-cfg.min_dscp = 0;
-cfg.max_dscp = 63;
-cfg.initial_dscp = 32;
-cfg.enabled = true;
-
-controller.set_config(cfg);
+```
+Priority = 5   → 최고 우선순위 (많은 PRB 할당)
+Priority = 40  → 중간 우선순위
+Priority = 90  → 낮은 우선순위
+Priority = 127 → 최저 우선순위 (적은 PRB 할당)
 ```
 
-## 최근 변경 사항 및 문제점 분석 (2025-12-16)
+### PID 출력을 Priority 변화로 변환
 
-### 주요 변경 사항
+**코드 위치**: `lib/sdap/throughput_controller.cpp:283-296`
 
-#### 1. Throughput Controller가 계산한 Priority 값을 스케줄러에 직접 적용
-**변경 파일**: `lib/scheduler/policy/scheduler_time_qos.cpp`
-
-**변경 내용**:
-- **이전**: DSCP → 5QI → Priority 경로로 우회하여 Priority 값 제한 (예: Priority=90으로 제한)
-- **현재**: Throughput Controller가 계산한 `target_priority` 값을 스케줄러에서 직접 사용
-- `#include "srsran/sdap/throughput_controller.h"` 추가 (29줄)
-
-**변경된 코드 흐름**:
 ```cpp
-// 이전 방식 (문제 있었음):
-DSCP → 5QI 매핑 → Priority (최대 90으로 제한)
-→ combined_prio = Priority × ARP = 90 × 8 = 720
-→ prio_weight = (1906 - 720) / 1906 = 0.622
+// PID 출력을 Priority 변화로 스케일링
+const double priority_scale = 10.0;  // 하드코딩된 상수 (설정 불가)
+int priority_change = static_cast<int>(std::round(pid_output * priority_scale));
 
-// 현재 방식 (개선됨):
-Throughput Controller → target_priority 계산 (예: 127)
-→ 스케줄러가 Priority=127 직접 사용
-→ combined_prio = Priority × ARP = 127 × 8 = 1016
-→ prio_weight = (1906 - 1016) / 1906 = 0.467
+// 목표 Priority 계산
+// 스루풋 부족 → Priority 감소 (우선순위 증가)
+// 스루풋 과도 → Priority 증가 (우선순위 감소)
+int target_priority = static_cast<int>(current_priority) - priority_change;
+target_priority = std::clamp(target_priority, 1, 127);
 ```
+
+**변환 공식:**
+```
+priority_change = round(PID_output × 10.0)
+target_priority = current_priority - priority_change
+target_priority = clamp(target_priority, 1, 127)
+```
+
+**중요:**
+- `priority_scale = 10.0`은 **하드코딩된 상수**입니다 (설정 불가)
+- 이것은 PID 출력을 Priority 변화량으로 변환하는 **스케일 팩터**입니다
+- PID 파라미터(Kp, Ki, Kd)는 여전히 설정 가능합니다
+- `priority_scale`은 PID 출력 1.0이 Priority 변화 10에 해당하도록 변환합니다
+
+**예시:**
+- 현재 Priority = 40
+- PID_output = 0.3 (스루풋 부족)
+- priority_change = round(0.3 × 10.0) = 3
+- target_priority = 40 - 3 = 37 (우선순위 증가)
+
+**의미:**
+- PID_output이 1.0이면 Priority가 10만큼 변화
+- PID_output이 0.5이면 Priority가 5만큼 변화
+- PID_output이 2.0이면 Priority가 20만큼 변화
+
+### 스케줄러에서 Priority 적용
 
 **코드 위치**: `lib/scheduler/policy/scheduler_time_qos.cpp:379-409`
+
 ```cpp
 auto& throughput_ctrl = throughput_controller::get_instance();
 std::optional<uint8_t> target_priority = throughput_ctrl.get_target_priority(ue_index);
 
 if (target_priority.has_value()) {
-  // Throughput Controller가 활성화되어 있으면 계산된 target_priority 직접 사용
+  // Throughput Controller가 활성화되어 있으면 계산된 Priority 직접 사용
   effective_priority = qos_prio_level_t{target_priority.value()};
-  logger.info("[STEP6-SCHED] Throughput Controller Priority 적용 - UE{} LCID{} Priority={}",
-              ue_index, static_cast<unsigned>(lc->lcid), target_priority.value());
 } else {
-  // Throughput Controller가 비활성화되어 있으면 DSCP 기반 Priority 사용
-  const standardized_qos_characteristics* qos_chars = get_5qi_to_qos_characteristics_mapping(effective_5qi);
-  if (qos_chars != nullptr) {
-    effective_priority = qos_chars->priority;
-  }
+  // 비활성화되어 있으면 DSCP → 5QI → Priority 경로 사용
+  // ...
 }
 ```
 
-**효과**:
-- DSCP → 5QI → Priority 경로를 우회하여 Throughput Controller가 계산한 Priority를 직접 적용
-- Priority 범위를 1-127까지 전체 사용 가능 (이전에는 5QI 매핑으로 인해 Priority=90 정도로 제한됨)
+**중요:**
+- Throughput Controller가 계산한 `target_priority`를 스케줄러에서 직접 사용
+- DSCP → 5QI → Priority 매핑 경로를 우회
+- Priority 범위 1-127 전체 사용 가능
 
-#### 2. Throughput Controller에 `target_priority` 저장 및 조회 기능 추가
-**변경 파일**: 
-- `include/srsran/sdap/throughput_controller.h`
-- `lib/sdap/throughput_controller.cpp`
+### Priority → PRB 할당
 
-**변경 내용**:
-- `pid_state` 구조체에 `target_priority` 필드 추가
-- `get_target_priority()` 함수 추가: 스케줄러에서 Priority 값 조회 가능
-- `compute_dscp_adjustment()`에서 계산한 `target_priority`를 상태에 저장
+스케줄러는 Priority를 사용하여 `final_priority`를 계산하고, 이를 기준으로 UE 선택 및 PRB 할당:
 
-**코드 위치**: `lib/sdap/throughput_controller.cpp:294-296`
-```cpp
-int target_priority = static_cast<int>(current_priority) - priority_change;
-target_priority = std::clamp(target_priority, 1, 127); // Priority 범위 제한
-state.target_priority = static_cast<uint8_t>(target_priority);  // 상태에 저장
+```
+Priority (낮을수록 높은 우선순위)
+  ↓
+combined_prio = priority × ARP_priority
+  ↓
+prio_weight 계산
+  ↓
+final_priority = pf_weight × gbr_weight × prio_weight × delay_weight
+  ↓
+스케줄러가 final_priority 높은 UE를 우선 선택
+  ↓
+더 많은 PRB 할당
+  ↓
+더 큰 TBS
+  ↓
+더 높은 스루풋
 ```
 
-#### 3. SDAP에서 iperf3 DSCP 무시 로직 추가
-**변경 파일**: `lib/sdap/sdap_entity_tx_impl.h`
+---
 
-**변경 내용**:
-- Throughput Controller가 활성화된 UE의 경우, iperf3가 보낸 DSCP 값을 무시
-- Throughput Controller가 계산한 DSCP가 iperf3 DSCP에 의해 덮어쓰이지 않도록 보호
+## 전체 제어 루프
 
-**코드 위치**: `lib/sdap/sdap_entity_tx_impl.h:104-123`
+### 제어 루프 다이어그램
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Throughput Controller 제어 루프                        │
+└─────────────────────────────────────────────────────────┘
+
+[초기화] UE별 목표 스루풋 설정
+  파일: apps/du/du.cpp 또는 apps/gnb/gnb.cpp
+  ↓
+  throughput_ctrl.set_target_throughput_map({
+    {UE0, 1.5Mbps},
+    {UE1, 2.0Mbps},
+    {UE2, 1.0Mbps}
+  })
+  ↓
+
+[1단계] 스루풋 측정 (주기적으로, 예: 1초마다)
+  파일: lib/scheduler/logging/scheduler_metrics_handler.cpp
+  ↓
+  dl_brate_kbps = (sum_dl_tb_bytes × 8) / metric_report_period.count()
+  ↓
+
+[2단계] Throughput Controller에 전달
+  파일: lib/scheduler/logging/scheduler_metrics_handler.cpp
+  ↓
+  throughput_ctrl.update_throughput(metrics)
+  ↓
+
+[3단계] 오차 계산
+  파일: lib/sdap/throughput_controller.cpp
+  ↓
+  error = target_mbps - current_mbps
+  current_mbps = metrics.dl_brate_kbps / 1000.0
+  ↓
+
+[4단계] PID 제어기 계산
+  파일: lib/sdap/throughput_controller.cpp
+  ↓
+  PID_output = Kp×error + Ki×integral + Kd×derivative
+  ↓
+
+[5단계] Priority 계산
+  파일: lib/sdap/throughput_controller.cpp
+  ↓
+  priority_change = round(PID_output × 10.0)
+  target_priority = current_priority - priority_change
+  target_priority = clamp(target_priority, 1, 127)
+  ↓
+
+[6단계] target_priority 저장
+  파일: lib/sdap/throughput_controller.cpp
+  ↓
+  state.target_priority = target_priority
+  ↓
+
+[7단계] 스케줄러에서 Priority 적용
+  파일: lib/scheduler/policy/scheduler_time_qos.cpp
+  ↓
+  target_priority = throughput_ctrl.get_target_priority(ue_index)
+  effective_priority = target_priority.value()
+  ↓
+
+[8단계] 스케줄러가 PRB 할당
+  파일: lib/scheduler/policy/scheduler_time_qos.cpp
+  ↓
+  final_priority 계산
+  우선순위 높은 UE 선택
+  PRB 할당
+  ↓
+
+[9단계] TBS 결정 및 전송
+  파일: lib/ran/sch/tbs_calculator.cpp
+  ↓
+  TBS = f(PRB, MCS, 레이어, ...)
+  전송
+  ↓
+
+[다음 주기] 다시 [1단계]로 (1초 후)
+```
+
+## 코드 흐름
+
+### 1. 초기화
+
+**파일**: `apps/du/du.cpp:412-419` 또는 `apps/gnb/gnb.cpp:550-557`
+
 ```cpp
-auto& mapper = dscp_qos_mapper::get_instance();
 auto& throughput_ctrl = throughput_controller::get_instance();
+std::unordered_map<du_ue_index_t, double> ue_target_throughput_map = {
+    {to_du_ue_index(0), 1.5},  // UE0: 1.5Mbps
+    {to_du_ue_index(1), 2.0},  // UE1: 2.0Mbps
+    {to_du_ue_index(2), 1.0}   // UE2: 1.0Mbps
+};
+throughput_ctrl.set_target_throughput_map(ue_target_throughput_map);
+```
 
-// Throughput controller가 활성화되어 있으면 iperf3의 DSCP는 무시하고
-// throughput controller가 계산한 DSCP를 사용
-bool ctrl_enabled = throughput_ctrl.is_control_enabled(static_cast<du_ue_index_t>(ue_index));
-if (not ctrl_enabled) {
-  mapper.register_dscp_for_ue(ue_index, dscp.value());
-  logger.log_info("[STEP2-MAPPER] DSCP 등록 완료 - UE={} DSCP={} (throughput control 비활성화)",
-                  ue_index, dscp.value());
+**중요**: UE 등록 **전에** 설정해야 UE가 등록될 때 자동으로 적용됨
+
+### 2. 스루풋 측정 및 전달
+
+**파일**: `lib/scheduler/logging/scheduler_metrics_handler.cpp:643, 500`
+
+```cpp
+// 스루풋 계산
+ret.dl_brate_kbps = static_cast<double>(data.sum_dl_tb_bytes * 8U) / metric_report_period.count();
+
+// Throughput Controller에 전달
+throughput_ctrl.update_throughput(metrics);
+```
+
+### 3. PID 제어기 계산
+
+**파일**: `lib/sdap/throughput_controller.cpp:240-296`
+
+```cpp
+void throughput_controller::compute_dscp_adjustment(pid_state& state, double current_mbps, double target_mbps) {
+  // 1. 오차 계산
+  state.error = target_mbps - current_mbps;
+  
+  // 2. PID 계산
+  double p_term = cfg.kp * state.error;
+  state.integral += state.error;
+  state.integral = std::clamp(state.integral, -max_integral, max_integral);
+  double i_term = cfg.ki * state.integral;
+  double d_term = cfg.kd * (state.error - state.last_error);
+  state.last_error = state.error;
+  double pid_output = p_term + i_term + d_term;
+  
+  // 3. Priority 계산
+  const double priority_scale = 10.0;
+  int priority_change = static_cast<int>(std::round(pid_output * priority_scale));
+  int target_priority = static_cast<int>(current_priority) - priority_change;
+  target_priority = std::clamp(target_priority, 1, 127);
+  state.target_priority = static_cast<uint8_t>(target_priority);
+}
+```
+
+### 4. 스케줄러에서 Priority 적용
+
+**파일**: `lib/scheduler/policy/scheduler_time_qos.cpp:379-409`
+
+```cpp
+auto& throughput_ctrl = throughput_controller::get_instance();
+std::optional<uint8_t> target_priority = throughput_ctrl.get_target_priority(ue_index);
+
+qos_prio_level_t effective_priority;
+
+if (target_priority.has_value()) {
+  // Throughput Controller가 활성화되어 있으면 계산된 Priority 직접 사용
+  effective_priority = qos_prio_level_t{target_priority.value()};
 } else {
-  // Throughput controller가 활성화되어 있으면 iperf3의 DSCP를 무시
-  logger.log_info("[STEP2-MAPPER] DSCP 등록 건너뜀 - UE={} DSCP={} (throughput controller 활성화, iperf3 DSCP 무시)",
-                   ue_index, dscp.value());
+  // 비활성화되어 있으면 DSCP → 5QI → Priority 경로 사용
+  // ...
 }
 ```
 
-**이유**:
-- iperf3가 패킷에 설정한 DSCP 값이 Throughput Controller가 계산한 DSCP 값을 덮어쓰는 문제 발생
-- Throughput Controller가 목표 스루풋에 맞춰 동적으로 DSCP를 조정하는데, iperf3의 고정 DSCP가 이를 방해
-- 따라서 Throughput Controller가 활성화된 경우 iperf3 DSCP를 무시하여 제어 루프가 정상 동작하도록 수정
+---
 
-#### 4. 로거 Lazy Initialization 적용
-**변경 파일**: `lib/sdap/throughput_controller.cpp`
+## 설정 방법
 
-**변경 내용**:
-- `THROUGHPUT_CTRL` 로거를 lazy initialization으로 변경
-- `srslog::init()` 후에 로거를 가져와야 올바른 sink(파일)를 사용함
+### 기본 설정
 
-**코드 위치**: `lib/sdap/throughput_controller.cpp:32-38`
+**파일**: `include/srsran/sdap/throughput_controller.h:40-48`
+
 ```cpp
-// 이전 방식 (문제 있었음):
-// static srslog::basic_logger& logger = srslog::fetch_basic_logger("THROUGHPUT_CTRL", false);
-// → srslog::init() 전에 초기화되어 콘솔로 출력됨
-
-// 현재 방식 (수정됨):
-static srslog::basic_logger& get_logger()
-{
-  static srslog::basic_logger& logger = srslog::fetch_basic_logger("THROUGHPUT_CTRL");
-  return logger;
-}
-// → srslog::init() 후에 로거를 가져와서 파일로 출력됨
+struct config {
+  double target_throughput_mbps = 1.5;  // 기본 목표 스루풋
+  double kp = 1.0;   // Proportional gain
+  double ki = 0.1;   // Integral gain
+  double kd = 0.01;  // Derivative gain
+  std::chrono::milliseconds control_period_ms{1000};  // 제어 주기 (1초)
+  uint8_t min_dscp = 0;
+  uint8_t max_dscp = 63;
+  uint8_t initial_dscp = 32;
+  bool enabled = true;
+};
 ```
 
-**이유**:
-- 로거가 정적 변수로 초기화되면 `srslog::init()` 전에 실행되어 기본 sink(콘솔)를 사용
-- 함수 내부에서 정적 변수로 선언하면 함수 호출 시점에 초기화되어, `srslog::init()` 이후에 로거를 가져올 수 있음
-- 이를 통해 로그가 파일(`gnb.log`)에만 기록되고 콘솔에는 출력되지 않음
+### UE별 목표 스루풋 설정
 
-#### 5. 로깅 개선
-**변경 파일**: `lib/sdap/throughput_controller.cpp`
+**파일**: `apps/du/du.cpp:412-419` 또는 `apps/gnb/gnb.cpp:550-557`
 
-**변경 내용**:
-- DSCP 변경 전 값을 저장하여 로그에 올바르게 표시
-- `best_priority`와 `priority_diff` 로깅 추가: 실제 선택된 DSCP의 Priority와 차이 확인
-
-**코드 위치**: `lib/sdap/throughput_controller.cpp:130-148, 300-308, 316-324`
 ```cpp
-// DSCP 변경 전 값 저장
-uint8_t old_dscp = state.current_dscp;
-uint8_t new_dscp = compute_dscp_adjustment(state, current_mbps, state.target_mbps);
-
-if (new_dscp != state.current_dscp) {
-  // ... DSCP 업데이트 ...
-  get_logger().info("DSCP adjusted for UE{}: throughput={:.2f}Mbps (target={:.2f}Mbps), DSCP={}->{}",
-                    ue_index, current_mbps, state.target_mbps, old_dscp, new_dscp);
-}
-
-// PID 제어 로그에 best_priority, priority_diff 추가
-get_logger().info("PID control (Priority-based): current={:.2f}Mbps, target={:.2f}Mbps, ... "
-                  "best_dscp={}, best_priority={}, priority_diff={} [CHANGED]",
-                  ..., best_dscp, best_priority, priority_diff);
+auto& throughput_ctrl = throughput_controller::get_instance();
+std::unordered_map<du_ue_index_t, double> ue_target_map = {
+  {to_du_ue_index(0), 1.5},  // UE0: 1.5Mbps
+  {to_du_ue_index(1), 2.0},  // UE1: 2.0Mbps
+  {to_du_ue_index(2), 1.0}   // UE2: 1.0Mbps
+};
+throughput_ctrl.set_target_throughput_map(ue_target_map);
 ```
 
-### 현재 문제점 및 원인 분석
-
-#### 문제 1: Priority 변경은 되지만 스루풋이 목표에 수렴하지 않음
-
-**현상**:
-- Throughput Controller가 `target_priority=127` (최저 우선순위)로 계산
-- 스케줄러가 Priority=127을 적용하여 `combined_prio=1016`, `prio_weight=0.467`로 변경
-- 하지만 실제 스루풋은 여전히 높음:
-  - UE0: `current=14.44Mbps, target=1.50Mbps` (error=-12.94Mbps)
-  - UE1: `current=14.38Mbps, target=2.00Mbps` (error=-12.38Mbps)
-
-**로그 확인**:
-```
-[THROUGHPUT_CTRL] PID control: current=14.44Mbps, target=1.50Mbps, error=-12.94
-[THROUGHPUT_CTRL] target_priority=127, best_dscp=0, best_priority=90
-[SCHED] Throughput Controller Priority 적용 - Priority=127
-[SCHED] DL Priority calc: min_combined_prio=1016, prio_weight=0.467
-[SCHED] DL Final Priority: final_priority=0.001
-```
-
-**가능한 원인들**:
-
-1. **PF Weight가 매우 작아서 Priority의 영향이 미미함**
-   - `pf_weight = 0.001` (매우 작음)
-   - `final_priority = pf_weight × gbr_weight × prio_weight × delay_weight`
-   - `final_priority = 0.001 × 1.0 × 0.467 × 1.0 = 0.001`
-   - PF weight가 작으면 Priority 변경의 영향이 제한적일 수 있음
-
-2. **제어 지연 (Control Delay)**
-   - Priority 변경 → 스케줄러 반영 → 리소스 할당 변경 → 스루풋 측정까지 시간 소요
-   - PID 제어기는 적분 항(I)으로 누적 오차를 보정하지만, 충분한 시간이 필요할 수 있음
-
-3. **Priority 범위 제한**
-   - `target_priority=127`로 계산되었지만, 이미 Priority 범위의 최대값
-   - 더 낮은 우선순위(더 높은 Priority 값)로 갈 수 없음
-   - 현재 모든 UE가 Priority=127을 사용하여 차별화 부족
-
-4. **다른 요인의 영향**
-   - iperf3가 높은 비트레이트(예: 5Mbps)로 전송 중일 수 있음
-   - 채널 상태나 다른 스케줄링 요인들이 Priority보다 더 큰 영향
-
-#### 문제 2: DSCP 매핑의 한계
-
-**현상**:
-- `target_priority=127`로 계산되었지만, DSCP 매핑 테이블에는 Priority=127에 해당하는 DSCP가 없음
-- 결과적으로 `best_dscp=0` (Priority=90)이 선택됨
-- 하지만 스케줄러는 `target_priority=127`을 직접 사용하므로 이 문제는 해결됨
-
-**로그 확인**:
-```
-[THROUGHPUT_CTRL] target_priority=127, best_dscp=0, best_priority=90, priority_diff=0
-```
-
-#### 문제 3: 모든 UE가 동일한 Priority를 가지는 경우
-
-**현상**:
-- 모든 UE가 Priority=127을 사용하면 `combined_prio`도 동일함
-- `prio_weight`가 동일하여 Priority 기반 차별화 불가
-- 다른 UE와의 상대적 우선순위 차이가 없음
-
-### 해결 방향
-
-#### 1. Priority 차별화
-- UE별로 다른 Priority 값을 사용하여 상대적 우선순위 차이 확보
-- 현재는 모든 UE가 Priority=127 (최저 우선순위)로 동일함
-
-#### 2. PF Weight의 영향 확인
-- PF weight가 매우 작은 이유 확인 (avg_rate가 높기 때문)
-- PF weight의 영향을 줄이거나 Priority의 가중치를 높이는 방법 검토
-
-#### 3. PID 파라미터 조정
-- 현재 PID 파라미터: `kp=1.0, ki=0.1, kd=0.01`
-- 더 공격적인 조정이 필요할 수 있음 (예: `ki` 값 증가)
-
-#### 4. 제어 주기 조정
-- 현재 제어 주기: 1초
-- 더 짧은 주기로 변경하여 빠른 반응 가능 (단, 시스템 부하 고려)
-
-### 검증 방법
-
-**로그 확인 명령어**:
-```bash
-# 1. Throughput Controller Priority 적용 확인
-grep "Throughput Controller Priority 적용" /tmp/gnb.log | tail -20
-
-# 2. Priority 계산 확인
-grep "PID control.*target_priority=" /tmp/gnb.log | tail -20
-
-# 3. 스케줄러 Priority 적용 확인
-grep "min_combined_prio=" /tmp/gnb.log | tail -20
-
-# 4. 스루풋 변화 추이 확인
-grep "DSCP adjusted.*throughput=" /tmp/gnb.log | tail -30
-
-# 5. final_priority 확인
-grep "DL Final Priority" /tmp/gnb.log | tail -20
-```
-
-**기대되는 결과**:
-- Priority 변경 → `combined_prio` 변경 → `prio_weight` 변경 → `final_priority` 변경
-- 시간 경과에 따라 스루풋이 목표값에 수렴
-
-### 참고 사항
-
-1. **Priority와 스루풋의 관계**:
-   - Priority 값이 낮을수록 높은 우선순위 = 더 많은 리소스 할당 = 더 높은 스루풋
-   - Priority 값이 높을수록 낮은 우선순위 = 더 적은 리소스 할당 = 더 낮은 스루풋
-
-2. **제어 지연**:
-   - Priority 변경 → 다음 스케줄링 슬롯 반영 → 리소스 할당 변경 → 스루풋 측정
-   - 전체 과정에 시간이 소요되므로 즉각적인 변화는 기대하기 어려움
-
-3. **PID 제어기 특성**:
-   - 적분 항(I)이 누적되어 시간이 지나면서 오차가 보정됨
-   - 충분한 시간을 주면 목표값에 수렴해야 함
 
