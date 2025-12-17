@@ -1,35 +1,6 @@
-# Throughput과 DSCP 조정 관계 설명
+# UE별로 목표 스루풋을 고정해 두고, 그 목표 스루풋에 수렴하도록 DSCP(→ Priority)를 PID 제어로 동적으로 조정하는 구조 설명
 
-## 핵심 개념
-
-### 1. UE별 독립적인 제어
-
-**각 UE는 독립적으로 제어됩니다:**
-
-```
-UE0: {
-  목표 스루풋: 1.5Mbps (실제 코드에서 설정된 값)
-  현재 스루풋: 1.2Mbps (스케줄러 메트릭에서 측정)
-  DSCP: 32 → 33 (PID 제어기로 조정)
-  PID 상태: {error, integral, last_error, target_priority}
-}
-
-UE1: {
-  목표 스루풋: 2.0Mbps (실제 코드에서 설정된 값)
-  현재 스루풋: 2.5Mbps
-  DSCP: 32 → 31 (PID 제어기로 조정)
-  PID 상태: {error, integral, last_error, target_priority}
-}
-
-UE2: {
-  목표 스루풋: 1.0Mbps (실제 코드에서 설정된 값)
-  현재 스루풋: 1.0Mbps
-  DSCP: 32 (변화 없음)
-  PID 상태: {error, integral, last_error, target_priority}
-}
-```
-
-### 2. Throughput이란?
+### 1. Throughput 구하는 방법 
 
 **`scheduler_ue_metrics.dl_brate_kbps`**: 
 - 각 UE가 **실제로 받은** 다운링크 비트레이트 (kbps 단위)
@@ -56,21 +27,6 @@ dl_brate_kbps = (sum_dl_tb_bytes * 8) / metric_report_period.count();
 // * 8: 바이트 → 비트 변환
 // metric_report_period.count(): 리포트 기간 (밀리초, 예: 1000ms)
 ```
-
-**계산 예시:**
-- 리포트 기간: 1000ms (1초)
-- 성공적으로 전송된 총 바이트: 150,000 bytes
-- `dl_brate_kbps = (150,000 * 8) / 1000 = 1,200 kbps = 1.2 Mbps`
-
-**주의사항:**
-- HARQ ACK를 받은 Transport Block만 카운트됩니다 (NACK나 타임아웃은 제외)
-- 리포트 기간 동안 누적된 값이므로 평균 스루풋입니다
-- 리포트 기간이 끝나면 `sum_dl_tb_bytes`는 리셋되어 다음 기간을 측정합니다
-
-**예시:**
-- UE0: `dl_brate_kbps = 1200` → 1.2Mbps (목표: 1.5Mbps)
-- UE1: `dl_brate_kbps = 2500` → 2.5Mbps (목표: 2.0Mbps)
-- UE2: `dl_brate_kbps = 1000` → 1.0Mbps (목표: 1.0Mbps)
 
 #### 최대 스루풋
 
