@@ -3,10 +3,7 @@
 
 ### 1. Time-Line
 
-┌─────────────────────────────────────────────────────────┐
-│  제어 루프 (Control Loop) - Priority 기반               │
-└─────────────────────────────────────────────────────────┘
-
+```
 [0단계] 초기화: UE별 목표 스루풋 설정
   파일: apps/du/du.cpp 또는 apps/gnb/gnb.cpp
   ↓
@@ -82,7 +79,7 @@
 [다음 주기] 새로운 스루풋 측정 (1초 후)
 ```
 
-### 4. 구체적인 예시 (UE 3개)
+### 2. 구체적인 예시 (UE 3개)
 
 **참고**: 아래 예시는 PID 제어기의 작동 방식을 설명하기 위한 예시입니다. 실제 코드에서 사용하는 값과는 다를 수 있습니다 (실제 코드 예시: UE0=1.5Mbps, UE1=2.0Mbps, UE2=1.0Mbps).
 
@@ -96,6 +93,8 @@ UE2: 현재=5.0Mbps, 목표=5.0Mbps, DSCP=32
 ```
 
 **PID 제어기 동작 (t=1초):**
+
+**`PID_output = Kp×error + Ki×integral + Kd×derivative`**
 
 **UE0 (부족한 경우):**
 - error = 5.0 - 4.2 = +0.8Mbps (양수 = 부족)
@@ -130,54 +129,7 @@ UE1: 현재=5.5Mbps (감소함), 목표=5.0Mbps, DSCP=31
 UE2: 현재=5.0Mbps (유지), 목표=5.0Mbps, DSCP=32
 ```
 
-### 5. DSCP → 5QI → Priority 매핑 (중요!)
-
-**핵심**: DSCP 값 자체가 우선순위를 결정하는 것이 아닙니다!
-
-```
-실제 우선순위 결정 과정:
-DSCP → 5QI → Priority → 스케줄러 우선순위
-
-예시:
-DSCP 63 → 5QI 69 → Priority=5   → 최고 우선순위 (낮은 priority 값)
-DSCP 46 → 5QI 7  → Priority=70 → 중간 우선순위
-DSCP 32 → 5QI 2  → Priority=40 → 중간 우선순위
-DSCP 0  → 5QI 9  → Priority=90 → 최저 우선순위 (높은 priority 값)
-
-중요한 점:
-- Priority 값이 낮을수록 높은 우선순위 (priority=5 > priority=90)
-- DSCP 값이 높다고 항상 더 높은 우선순위인 것은 아님 (매핑이 비선형적)
-- 따라서 Priority 기반으로 DSCP를 조정해야 함
-
-스케줄러에서:
-combined_prio = priority × ARP_priority
-낮은 combined_prio = 높은 우선순위 = 더 많은 PRB 할당
-```
-
-**Priority 기반 조정 로직:**
-```
-스루풋 부족 → Priority 감소 필요 → 더 낮은 Priority 값의 5QI 찾기 → 해당 DSCP 선택
-스루풋 과도 → Priority 증가 필요 → 더 높은 Priority 값의 5QI 찾기 → 해당 DSCP 선택
-```
-
-### 6. 제어 루프의 지연 (Delay)
-
-**중요한 점:**
-- 현재 측정하는 스루풋은 **과거의 DSCP**의 결과입니다
-- DSCP를 조정하면 → 다음 주기(1초 후)에 스루풋 변화가 나타납니다
-- 이것이 PID 제어기가 필요한 이유입니다 (안정적인 제어)
-
-```
-시간축:
-t=0초: DSCP=32 설정
-t=1초: 스루풋 측정 (DSCP=32의 결과)
-t=1초: DSCP=33으로 조정 (PID 제어기)
-t=2초: 스루풋 측정 (DSCP=33의 결과)
-t=2초: DSCP=34로 조정 (PID 제어기)
-...
-```
-
-### 7. 코드에서의 실제 동작
+### 3. 코드에서의 실제 동작
 
 **`scheduler_metrics_handler::report_metrics()`:**
 ```cpp
@@ -227,30 +179,13 @@ std::optional<uint8_t> ue_dscp = mapper.get_dscp_for_ue(ue_index);
 
 2. **P + I (Proportional + Integral)를 사용하는 경우**:
    - 누적 오차를 보정하여 정상 상태 오차 제거
-   - **문제**: Windup 발생 가능 (오차가 계속 누적되어 과도한 조정)
+   - **문제**: 오차가 계속 누적되어 과도한 조정이 일어날 수 있음
 
 3. **P + I + D (PID)를 사용하는 경우**:
    - P: 현재 오차에 즉각 반응
    - I: 누적 오차 보정 (정상 상태 오차 제거)
    - D: 오차 변화율에 반응 (오버슈트 방지)
    - **결과**: 안정적이고 정확한 제어
-
-**실제 예시**:
-```
-단순 비례 제어:
-- 목표: 5Mbps, 현재: 4.2Mbps → 조정
-- 목표: 5Mbps, 현재: 4.9Mbps → 작은 조정
-- 목표: 5Mbps, 현재: 4.95Mbps → 매우 작은 조정
-→ 결국 4.95Mbps에서 멈춤 (정상 상태 오차)
-
-PID 제어:
-- 목표: 5Mbps, 현재: 4.2Mbps → P+I+D로 조정
-- 목표: 5Mbps, 현재: 4.9Mbps → I가 누적 오차 보정
-- 목표: 5Mbps, 현재: 4.95Mbps → I가 계속 보정
-→ 결국 5.0Mbps에 정확히 도달
-```
-
-PID 제어기는 이 문제들을 해결하기 위해 3가지 요소를 결합합니다.
 
 ### PID 계산식
 
@@ -319,34 +254,6 @@ D_term = Kd × (error - last_error)
 - 노이즈에 민감할 수 있음
 - 따라서 Kd 값이 작게 설정됨 (0.01)
 
-### 실제 계산 예시
-
-**시나리오**: 목표 5Mbps, 현재 4.2Mbps
-
-```
-[초기 상태]
-- error = 5.0 - 4.2 = 0.8Mbps
-- integral = 0.0 (초기)
-- last_error = 0.0 (초기)
-
-[1초차 계산]
-- P_term = 1.0 × 0.8 = 0.8
-- integral = 0.0 + 0.8 = 0.8
-- I_term = 0.1 × 0.8 = 0.08
-- derivative = 0.8 - 0.0 = 0.8
-- D_term = 0.01 × 0.8 = 0.008
-- PID_output = 0.8 + 0.08 + 0.008 = 0.888
-
-[2초차 계산 (스루풋이 4.5Mbps로 개선)]
-- error = 5.0 - 4.5 = 0.5Mbps
-- P_term = 1.0 × 0.5 = 0.5
-- integral = 0.8 + 0.5 = 1.3
-- I_term = 0.1 × 1.3 = 0.13
-- derivative = 0.5 - 0.8 = -0.3 (개선 중)
-- D_term = 0.01 × (-0.3) = -0.003
-- PID_output = 0.5 + 0.13 - 0.003 = 0.627
-```
-
 ### 게인 값 튜닝 가이드
 
 **기본 설정** (안정적인 제어):
@@ -388,107 +295,6 @@ cfg.enabled = true;
 
 controller.set_config(cfg);
 ```
-
-### UE별 목표 스루풋 설정
-
-UE별 목표 스루풋을 매핑으로 한 번에 설정합니다:
-
-```cpp
-// 여러 UE의 목표 스루풋을 한 번에 설정
-std::unordered_map<du_ue_index_t, double> ue_target_map = {
-  {to_du_ue_index(0), 1.5},  // UE0: 1.5Mbps
-  {to_du_ue_index(1), 2.0},  // UE1: 2.0Mbps
-  {to_du_ue_index(2), 1.0}   // UE2: 1.0Mbps
-};
-
-controller.set_target_throughput_map(ue_target_map);
-```
-
-**동작 방식:**
-- 이미 존재하는 UE는 즉시 목표 스루풋이 업데이트됨
-- 아직 등록되지 않은 UE는 등록 시 자동으로 해당 목표 스루풋이 적용됨
-
-**참고**: 특정 UE만 개별적으로 변경하려면 `set_target_throughput(ue_index, target_mbps)` 함수를 사용할 수 있습니다.
-
-### 초기화 시점 설정 (DU/gNB 시작 시)
-
-**파일 위치**: 
-- `apps/du/du.cpp` (412-419줄)
-- `apps/gnb/gnb.cpp` (550-558줄)
-
-```cpp
-// Initialize throughput controller with UE-specific target throughput mapping
-auto& throughput_ctrl = throughput_controller::get_instance();
-std::unordered_map<du_ue_index_t, double> ue_target_throughput_map = {
-    {to_du_ue_index(0), 1.5},  // UE0: 1.5Mbps
-    {to_du_ue_index(1), 2.0},  // UE1: 2.0Mbps
-    {to_du_ue_index(2), 1.0}   // UE2: 1.0Mbps
-};
-throughput_ctrl.set_target_throughput_map(ue_target_throughput_map);
-// du_logger.info() 또는 gnb_logger.info() 사용
-```
-
-**왜 이 위치인가?**
-
-1. **DU 인스턴스 생성 후**: `du_inst`가 생성된 후에 설정해야 스케줄러와 관련 컴포넌트가 준비됨
-2. **DU 시작 전**: `du_inst.get_operation_controller().start()` 전에 설정해야 UE가 등록될 때 자동으로 적용됨
-3. **명령어 파서 등록 후**: 모든 초기화가 완료된 시점이므로 안전함
-4. **싱글톤 패턴**: `throughput_controller`는 싱글톤이므로 어디서든 호출 가능하지만, 초기화 시점에 설정하는 것이 가장 안전하고 명확함
-
-**코드 흐름:**
-```
-1. DU 인스턴스 생성 (du_inst)
-2. 명령어 파서 등록
-3. → 여기서 throughput controller 초기화 ←
-4. DU 시작 (du_inst.get_operation_controller().start())
-5. UE 등록 시 자동으로 설정된 목표 스루풋 적용
-```
-
-### 제어 활성화/비활성화
-
-```cpp
-// 특정 UE에 대해 제어 활성화
-controller.enable_control(ue_index, true);
-
-// 제어 비활성화
-controller.enable_control(ue_index, false);
-```
-
-### 현재 DSCP 값 조회
-
-```cpp
-// 제어된 DSCP 값 조회
-auto dscp = controller.get_controlled_dscp(ue_index);
-if (dscp.has_value()) {
-    // 제어가 활성화된 경우 DSCP 값 사용
-    uint8_t current_dscp = dscp.value();
-}
-```
-
-### 로깅
-
-스루풋 제어기는 `THROUGHPUT_CTRL` 로거를 사용합니다 (로그는 파일에만 기록되고 콘솔에는 출력되지 않음):
-
-```
-[THROUGHPUT_CTRL] Target throughput set for UE0: 1.5Mbps
-[THROUGHPUT_CTRL] DSCP adjusted for UE0: throughput=1.2Mbps (target=1.5Mbps), DSCP=32->33
-[THROUGHPUT_CTRL] PID control (Priority-based): current=1.2Mbps, target=1.5Mbps, error=0.3, ...
-```
-
-## 요약
-
-1. **각 UE는 독립적으로 제어됨**: UE0, UE1, UE2 각각 독립적인 PID 상태
-2. **Throughput = 실제 측정된 스루풋**: `dl_brate_kbps` (kbps 단위)
-3. **Priority 기반 조정**: DSCP가 아닌 Priority 값을 기준으로 조정
-4. **DSCP 조정 방향**:
-   - 스루풋 부족 → Priority 감소 → 우선순위 증가 → 리소스 증가
-   - 스루풋 과도 → Priority 증가 → 우선순위 감소 → 리소스 감소
-5. **제어 주기**: 1초마다 측정 및 조정 (설정 가능)
-6. **지연**: DSCP 변경 → 1초 후 스루풋 변화 반영
-7. **PID 제어기**: P(비례) + I(적분) + D(미분)로 안정적이고 정확한 제어
-8. **자동 통합**: 스케줄러 메트릭 핸들러에 자동으로 통합되어 별도 호출 불필요
-
----
 
 ## 최근 변경 사항 및 문제점 분석 (2025-12-16)
 
