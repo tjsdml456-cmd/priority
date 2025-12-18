@@ -23,6 +23,7 @@
 #pragma once
 
 #include "srsran/sdap/dscp_qos_mapper.h"
+#include "srsran/sdap/throughput_controller.h"
 #include "sdap_session_logger.h"
 #include "srsran/ran/qos/five_qi.h"
 #include "srsran/sdap/sdap.h"
@@ -101,10 +102,25 @@ public:
       // ============================================================
       // dscp_qos_mapper 싱글톤에 UE 인덱스와 DSCP 값을 매핑하여 저장
       // 이후 DU나 스케줄러에서 이 값을 조회할 수 있음
+      // 단, throughput controller가 활성화되어 있으면 등록하지 않음
+      // (throughput controller가 목표 스루풋에 맞춰 DSCP를 재조정하므로)
       auto& mapper = dscp_qos_mapper::get_instance();
-      mapper.register_dscp_for_ue(ue_index, dscp.value());
-      logger.log_info("[STEP2-MAPPER] DSCP 등록 완료 - UE={} DSCP={} -> dscp_qos_mapper에 저장됨",
-                      ue_index, dscp.value());
+      auto& throughput_ctrl = throughput_controller::get_instance();
+      
+      // Throughput controller가 활성화되어 있으면 iperf3의 DSCP는 무시하고
+      // throughput controller가 계산한 DSCP를 사용
+      // is_control_enabled()는 UE가 초기화되었거나 pre-configured target이 있으면 true 반환
+      bool ctrl_enabled = throughput_ctrl.is_control_enabled(static_cast<du_ue_index_t>(ue_index));
+      if (not ctrl_enabled) {
+        mapper.register_dscp_for_ue(ue_index, dscp.value());
+        logger.log_info("[STEP2-MAPPER] DSCP 등록 완료 - UE={} DSCP={} -> dscp_qos_mapper에 저장됨 (throughput control 비활성화)",
+                        ue_index, dscp.value());
+      } else {
+        // Throughput controller가 활성화되어 있으면 iperf3의 DSCP를 무시
+        // (throughput controller가 등록한 DSCP를 덮어쓰지 않음)
+        logger.log_info("[STEP2-MAPPER] DSCP 등록 건너뜀 - UE={} DSCP={} (throughput controller 활성화, iperf3 DSCP 무시)",
+                         ue_index, dscp.value());
+      }
 
       // ============================================================
       // [단계 3] 자동 5QI 매핑: 첫 관찰 시 DSCP → 5QI 자동 매핑
@@ -162,4 +178,5 @@ private:
 } // namespace srs_cu_up
 
 } // namespace srsran
+
 

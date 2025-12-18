@@ -166,12 +166,14 @@ static void register_app_logs(const gnb_appconfig&            gnb_cfg,
   e2ap_logger.set_level(log_cfg.e2ap_level);
   e2ap_logger.set_hex_dump_max_size(log_cfg.hex_max_size);
 
-  // Register THROUGHPUT_CTRL logger - disable console output completely
-  // Set level to none to prevent any console output
+  // THROUGHPUT_CTRL 로거는 파일에만 기록하고 콘솔에는 출력 안 함
+  // (로거 레벨을 warning으로 설정하여 info 로그가 콘솔에 출력되지 않도록 함)
+  // 파일에는 여전히 기록됨 (default sink가 파일로 설정되어 있으므로)
   auto& throughput_ctrl_logger = srslog::fetch_basic_logger("THROUGHPUT_CTRL", false);
-  throughput_ctrl_logger.set_level(srslog::basic_levels::none);
+  throughput_ctrl_logger.set_level(srslog::basic_levels::debug);  
   throughput_ctrl_logger.set_hex_dump_max_size(log_cfg.hex_max_size);
-
+  
+  
   // Metrics log channels.
   const app_helpers::metrics_config& metrics_cfg = gnb_cfg.metrics_cfg.rusage_config.metrics_consumers_cfg;
   app_helpers::initialize_metrics_log_channels(metrics_cfg, log_cfg.hex_max_size);
@@ -550,12 +552,13 @@ int main(int argc, char** argv)
 
   o_cuup_obj.unit->get_operation_controller().start();
 
-  // Initialize throughput controller with UE-specific target throughput mapping
+  
+  /// Initialize throughput controller with UE-specific target throughput mapping
   auto& throughput_ctrl = throughput_controller::get_instance();
   std::unordered_map<du_ue_index_t, double> ue_target_throughput_map = {
-      {to_du_ue_index(0), 5.0},   // UE0: 5Mbps
-      {to_du_ue_index(1), 10.0},  // UE1: 10Mbps
-      {to_du_ue_index(2), 3.0}    // UE2: 3Mbps
+      {to_du_ue_index(0), 10.6},  // UE0: 1.5Mbps
+      {to_du_ue_index(1), 9.6},  // UE1: 2.0Mbps
+      {to_du_ue_index(2), 8.6}   // UE2: 1.0Mbps  
   };
   throughput_ctrl.set_target_throughput_map(ue_target_throughput_map);
   gnb_logger.info("Throughput controller initialized with UE-specific target throughput mapping");

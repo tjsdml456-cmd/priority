@@ -412,9 +412,9 @@ int main(int argc, char** argv)
   // Initialize throughput controller with UE-specific target throughput mapping
   auto& throughput_ctrl = throughput_controller::get_instance();
   std::unordered_map<du_ue_index_t, double> ue_target_throughput_map = {
-      {to_du_ue_index(0), 5.0},   // UE0: 5Mbps
-      {to_du_ue_index(1), 10.0},  // UE1: 10Mbps
-      {to_du_ue_index(2), 3.0}    // UE2: 3Mbps  
+      {to_du_ue_index(0), 10.6},  // UE0: 1.5Mbps
+      {to_du_ue_index(1), 9.6},  // UE1: 2.0Mbps
+      {to_du_ue_index(2), 8.6}   // UE2: 1.0Mbps  
   };
   throughput_ctrl.set_target_throughput_map(ue_target_throughput_map);
   du_logger.info("Throughput controller initialized with UE-specific target throughput mapping");
