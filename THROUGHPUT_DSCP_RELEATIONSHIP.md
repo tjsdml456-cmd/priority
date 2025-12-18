@@ -1,4 +1,4 @@
-# UE별로 목표 스루풋을 고정해 두고, 그 목표 스루풋에 수렴하도록 DSCP(→ Priority)를 PID 제어로 동적으로 조정하는 구조설명
+# Throughput Controller 동작 설명
 
 ## 목차
 
@@ -245,25 +245,28 @@ Priority = 127 → 최저 우선순위 (적은 PRB 할당)
 
 ### PID 출력을 Priority 변화로 변환
 
-**코드 위치**: `lib/sdap/throughput_controller.cpp:283-296`
+**코드 위치**: `lib/sdap/throughput_controller.cpp:295-304`
 
 ```cpp
 // PID 출력을 Priority 변화로 스케일링
 const double priority_scale = 10.0;  // 하드코딩된 상수 (설정 불가)
 int priority_change = static_cast<int>(std::round(pid_output * priority_scale));
 
-// 목표 Priority 계산
+// 목표 Priority 계산 (current_priority 기준으로 조정)
 // 스루풋 부족 → Priority 감소 (우선순위 증가)
 // 스루풋 과도 → Priority 증가 (우선순위 감소)
 int target_priority = static_cast<int>(current_priority) - priority_change;
 target_priority = std::clamp(target_priority, 1, 127);
+state.target_priority = static_cast<uint8_t>(target_priority);
 ```
 
 **변환 공식:**
 ```
-priority_change = round(PID_output × 10.0)
-target_priority = current_priority - priority_change
-target_priority = clamp(target_priority, 1, 127)
+1. 현재 DSCP → 5QI → current_priority 확인
+2. priority_change = round(PID_output × 10.0)
+3. target_priority = current_priority - priority_change
+4. target_priority = clamp(target_priority, 1, 127)
+5. target_priority에 가장 가까운 DSCP 찾기
 ```
 
 **중요:**
@@ -271,21 +274,57 @@ target_priority = clamp(target_priority, 1, 127)
 - 이것은 PID 출력을 Priority 변화량으로 변환하는 **스케일 팩터**입니다
 - PID 파라미터(Kp, Ki, Kd)는 여전히 설정 가능합니다
 - `priority_scale`은 PID 출력 1.0이 Priority 변화 10에 해당하도록 변환합니다
+- **current_priority 기준으로 조정**: base_priority 없이 현재 Priority에서 직접 조정
 
 **예시:**
-- 현재 Priority = 40
+- 현재 DSCP = 32 → 5QI → current_priority = 40
 - PID_output = 0.3 (스루풋 부족)
 - priority_change = round(0.3 × 10.0) = 3
 - target_priority = 40 - 3 = 37 (우선순위 증가)
+- Priority 37에 가장 가까운 DSCP 찾기
 
 **의미:**
 - PID_output이 1.0이면 Priority가 10만큼 변화
 - PID_output이 0.5이면 Priority가 5만큼 변화
 - PID_output이 2.0이면 Priority가 20만큼 변화
+- 모든 UE는 동일한 방식으로 current_priority 기준으로 조정됨
+
+### DSCP 선택 및 저장
+
+**코드 위치**: `lib/sdap/throughput_controller.cpp:310-335`
+
+`target_priority`가 계산된 후, 이 Priority에 가장 가까운 Priority를 가진 DSCP를 찾습니다:
+
+```cpp
+// 4. 목표 Priority에 가장 가까운 DSCP 찾기
+uint8_t best_dscp = state.current_dscp;
+int min_priority_diff = std::numeric_limits<int>::max();
+
+// 모든 DSCP 값을 탐색하여 목표 priority에 가장 가까운 5QI를 가진 DSCP 찾기
+for (uint8_t test_dscp = cfg.min_dscp; test_dscp <= cfg.max_dscp; ++test_dscp) {
+  // DSCP → 5QI → Priority 매핑 확인
+  // target_priority와 가장 가까운 Priority를 가진 DSCP 선택
+  int priority_diff = std::abs(test_priority - target_priority);
+  if (priority_diff < min_priority_diff) {
+    min_priority_diff = priority_diff;
+    best_dscp = test_dscp;
+  }
+}
+
+// 선택된 best_dscp를 dscp_qos_mapper에 등록
+mapper.register_dscp_for_ue(ue_index, best_dscp);
+state.current_dscp = best_dscp;
+```
+
+**중요:**
+- PID controller는 Priority를 계산하지만, 실제로는 DSCP 값을 조정
+- `target_priority`에 가장 가까운 Priority를 가진 DSCP를 찾아서 적용
+- DSCP는 `dscp_qos_mapper`에 등록되어 스케줄러에서 사용됨
+- 같은 Priority 차이를 가진 경우 현재 DSCP를 유지 (진동 방지)
 
 ### 스케줄러에서 Priority 적용
 
-**코드 위치**: `lib/scheduler/policy/scheduler_time_qos.cpp:379-409`
+**코드 위치**: `lib/scheduler/policy/scheduler_time_qos.cpp:389-409`
 
 ```cpp
 auto& throughput_ctrl = throughput_controller::get_instance();
@@ -294,6 +333,8 @@ std::optional<uint8_t> target_priority = throughput_ctrl.get_target_priority(ue_
 if (target_priority.has_value()) {
   // Throughput Controller가 활성화되어 있으면 계산된 Priority 직접 사용
   effective_priority = qos_prio_level_t{target_priority.value()};
+  logger.info("[STEP6-SCHED] Throughput Controller Priority 적용 - UE{} LCID{} Priority={}",
+              ue_index, lcid, target_priority.value());
 } else {
   // 비활성화되어 있으면 DSCP → 5QI → Priority 경로 사용
   // ...
@@ -302,6 +343,7 @@ if (target_priority.has_value()) {
 
 **중요:**
 - Throughput Controller가 계산한 `target_priority`를 스케줄러에서 직접 사용
+- `get_target_priority()`는 PID controller가 계산한 `state.target_priority` 반환
 - DSCP → 5QI → Priority 매핑 경로를 우회
 - Priority 범위 1-127 전체 사용 가능
 
@@ -334,6 +376,10 @@ final_priority = pf_weight × gbr_weight × prio_weight × delay_weight
 ### 제어 루프 다이어그램
 
 ```
+┌─────────────────────────────────────────────────────────┐
+│  Throughput Controller 제어 루프                        │
+└─────────────────────────────────────────────────────────┘
+
 [초기화] UE별 목표 스루풋 설정
   파일: apps/du/du.cpp 또는 apps/gnb/gnb.cpp
   ↓
@@ -377,10 +423,12 @@ final_priority = pf_weight × gbr_weight × prio_weight × delay_weight
   target_priority = clamp(target_priority, 1, 127)
   ↓
 
-[6단계] target_priority 저장
+[6단계] target_priority 저장 및 DSCP 선택
   파일: lib/sdap/throughput_controller.cpp
   ↓
   state.target_priority = target_priority
+  target_priority에 가장 가까운 DSCP 찾기
+  best_dscp를 dscp_qos_mapper에 등록
   ↓
 
 [7단계] 스케줄러에서 Priority 적용
@@ -424,7 +472,28 @@ std::unordered_map<du_ue_index_t, double> ue_target_throughput_map = {
 throughput_ctrl.set_target_throughput_map(ue_target_throughput_map);
 ```
 
-**중요**: UE 등록 **전에** 설정해야 UE가 등록될 때 자동으로 적용됨
+**UE 상태 초기화** (`lib/sdap/throughput_controller.cpp:117-149`):
+
+```cpp
+// 1. target_mbps 설정
+new_state.target_mbps = preconfigured_it->second;
+
+// 2. initial_dscp 설정 (기본값: 44)
+new_state.current_dscp = cfg.initial_dscp;
+
+// 3. initial_dscp → 5QI → Priority로 초기 target_priority 설정
+std::optional<five_qi_t> initial_5qi = mapper.map_dscp_to_5qi(cfg.initial_dscp);
+// ... 5QI → Priority 매핑 ...
+new_state.target_priority = qos_chars->priority.value();  // 예: 40
+
+// 4. initial_dscp를 dscp_qos_mapper에 등록
+mapper.register_dscp_for_ue(ue_index, cfg.initial_dscp);
+```
+
+**중요**: 
+- UE 등록 **전에** 설정해야 UE가 등록될 때 자동으로 적용됨
+- 초기 `target_priority`는 `initial_dscp`의 Priority로 설정됨
+- base_priority 없이 current_priority 기준으로 동작
 
 ### 2. 스루풋 측정 및 전달
 
@@ -440,10 +509,10 @@ throughput_ctrl.update_throughput(metrics);
 
 ### 3. PID 제어기 계산
 
-**파일**: `lib/sdap/throughput_controller.cpp:240-296`
+**파일**: `lib/sdap/throughput_controller.cpp:257-379`
 
 ```cpp
-void throughput_controller::compute_dscp_adjustment(pid_state& state, double current_mbps, double target_mbps) {
+uint8_t throughput_controller::compute_dscp_adjustment(pid_state& state, double current_mbps, double target_mbps) {
   // 1. 오차 계산
   state.error = target_mbps - current_mbps;
   
@@ -456,18 +525,29 @@ void throughput_controller::compute_dscp_adjustment(pid_state& state, double cur
   state.last_error = state.error;
   double pid_output = p_term + i_term + d_term;
   
-  // 3. Priority 계산
+  // 3. 현재 DSCP의 Priority 확인
+  std::optional<five_qi_t> current_5qi = mapper.map_dscp_to_5qi(state.current_dscp);
+  // ... current_priority 계산 ...
+  
+  // 4. Priority 계산 (current_priority 기준으로 조정)
   const double priority_scale = 10.0;
   int priority_change = static_cast<int>(std::round(pid_output * priority_scale));
   int target_priority = static_cast<int>(current_priority) - priority_change;
   target_priority = std::clamp(target_priority, 1, 127);
   state.target_priority = static_cast<uint8_t>(target_priority);
+  
+  // 5. target_priority에 가장 가까운 DSCP 찾기
+  // ... best_dscp 계산 ...
+  
+  return best_dscp;
 }
 ```
 
+**반환값**: 선택된 `best_dscp`가 반환되어 `dscp_qos_mapper`에 등록됨
+
 ### 4. 스케줄러에서 Priority 적용
 
-**파일**: `lib/scheduler/policy/scheduler_time_qos.cpp:379-409`
+**파일**: `lib/scheduler/policy/scheduler_time_qos.cpp:389-409`
 
 ```cpp
 auto& throughput_ctrl = throughput_controller::get_instance();
@@ -478,11 +558,24 @@ qos_prio_level_t effective_priority;
 if (target_priority.has_value()) {
   // Throughput Controller가 활성화되어 있으면 계산된 Priority 직접 사용
   effective_priority = qos_prio_level_t{target_priority.value()};
+  logger.info("[STEP6-SCHED] Throughput Controller Priority 적용 - UE{} LCID{} Priority={}",
+              ue_index, lcid, target_priority.value());
 } else {
   // 비활성화되어 있으면 DSCP → 5QI → Priority 경로 사용
   // ...
 }
 ```
+
+**get_target_priority() 동작** (`lib/sdap/throughput_controller.cpp:237-254`):
+
+```cpp
+std::optional<uint8_t> throughput_controller::get_target_priority(du_ue_index_t ue_index) const {
+  // ...
+  return it->second.target_priority;  // PID controller가 계산한 target_priority 반환
+}
+```
+
+**중요**: `get_target_priority()`는 PID controller가 최근에 계산한 `state.target_priority` 값을 반환합니다.
 
 ---
 
@@ -513,11 +606,16 @@ struct config {
 ```cpp
 auto& throughput_ctrl = throughput_controller::get_instance();
 std::unordered_map<du_ue_index_t, double> ue_target_map = {
-  {to_du_ue_index(0), 1.5},  // UE0: 1.5Mbps
-  {to_du_ue_index(1), 2.0},  // UE1: 2.0Mbps
-  {to_du_ue_index(2), 1.0}   // UE2: 1.0Mbps
+  {to_du_ue_index(0), 1.5},  // UE0: 1.5Mbps (DL)
+  {to_du_ue_index(1), 2.0},  // UE1: 2.0Mbps (DL)
+  {to_du_ue_index(2), 1.0}   // UE2: 1.0Mbps (DL)
 };
 throughput_ctrl.set_target_throughput_map(ue_target_map);
 ```
 
-위에서 설명한 기본 설정을 조절해 가면서 내가 설정한 ue별 스루풋에 도달하는 것이 목표임.
+**중요**: 목표 스루풋은 **DL(Downlink)만**입니다. UL과 합친 값이 아닙니다.
+- 코드 위치: `lib/sdap/throughput_controller.cpp:140`
+- `metrics.dl_brate_kbps`만 사용하여 현재 스루풋과 비교
+- UL 스루풋은 제어하지 않음
+
+
