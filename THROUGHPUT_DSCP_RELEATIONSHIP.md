@@ -9,6 +9,7 @@
 5. [전체 제어 루프](#전체-제어-루프)
 6. [코드 흐름](#코드-흐름)
 7. [설정 방법](#설정-방법)
+8. [수정/생성된 파일 목록](#수정생성된-파일-목록)
 
 ---
 
@@ -711,5 +712,61 @@ throughput_ctrl.set_target_throughput_map(ue_target_map);
 - 코드 위치: `lib/sdap/throughput_controller.cpp:140`
 - `metrics.dl_brate_kbps`만 사용하여 현재 스루풋과 비교
 - UL 스루풋은 제어하지 않음
+
+---
+
+## 수정/생성된 파일 목록
+
+### 새로 생성된 파일
+
+1. **`include/srsran/sdap/throughput_controller.h`**
+   - Throughput Controller 클래스 선언
+   - `config` 구조체: PID 파라미터, control period, DSCP 범위 등
+   - `pid_state` 구조체: 각 UE의 PID 상태 (error, integral, base_priority, target_priority 등)
+   - 주요 함수: `set_target_throughput_map()`, `update_throughput()`, `get_target_priority()` 등
+
+2. **`lib/sdap/throughput_controller.cpp`**
+   - Throughput Controller 클래스 구현
+   - PID 제어기 계산 로직
+   - base_priority 계산 (UE별 target throughput 차이를 Priority 차이로 변환)
+   - DSCP 선택 및 dscp_qos_mapper 등록
+   - Lazy initialization을 사용한 로거 설정
+
+### 수정된 파일
+
+1. **`apps/du/du.cpp`** (Line 412-419)
+   - Throughput Controller 초기화
+   - UE별 target throughput 설정
+   - `set_target_throughput_map()` 호출
+
+2. **`apps/gnb/gnb.cpp`** (Line 550-557)
+   - Throughput Controller 초기화 (DU와 동일)
+   - UE별 target throughput 설정
+   - `set_target_throughput_map()` 호출
+
+3. **`lib/scheduler/policy/scheduler_time_qos.cpp`** (Line 389-409, 473, 515)
+   - `apply_5qi_based_runtime_overrides()` 함수 수정
+   - Throughput Controller가 활성화되어 있으면 `get_target_priority()`로 직접 Priority 사용
+   - DSCP → 5QI → Priority 매핑 경로 우회
+   - Priority 범위 1-127 전체 사용 가능
+
+4. **`lib/scheduler/logging/scheduler_metrics_handler.cpp`** (Line 246-254, 643-644, 415-421, 655-661)
+   - `handle_dl_harq_ack()`: ACK 성공한 TBS만 누적 (재전송 제외)
+   - `compute_report()`: `dl_brate_kbps` 계산 및 `update_throughput()` 호출
+   - `metric_report_period` 로깅 추가
+   - `Throughput calc` 로깅 추가 (디버깅용)
+
+5. **`lib/sdap/sdap_entity_tx_impl.h`** (Line 104-107, 23)
+   - Throughput Controller가 활성화되어 있으면 iperf3의 DSCP 등록 건너뜀
+   - 동적으로 조정되는 DSCP가 iperf3 DSCP에 의해 덮어씌워지는 것을 방지
+   - `#include "srsran/sdap/throughput_controller.h"` 추가
+
+### 주요 변경 사항 요약
+
+- **새로운 기능**: Throughput Controller를 통한 동적 Priority 조정
+- **PID 제어기**: 각 UE별로 독립적인 PID 상태 관리
+- **base_priority**: UE별 target throughput 차이를 Priority 차이로 변환
+- **통합**: 스케줄러의 Priority 기반 스케줄링과 통합
+- **로그**: 디버깅을 위한 상세 로깅 추가
 
 
