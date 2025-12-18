@@ -252,21 +252,23 @@ Priority = 127 → 최저 우선순위 (적은 PRB 할당)
 const double priority_scale = 10.0;  // 하드코딩된 상수 (설정 불가)
 int priority_change = static_cast<int>(std::round(pid_output * priority_scale));
 
-// 목표 Priority 계산 (current_priority 기준으로 조정)
+// 목표 Priority 계산 (base_priority 기준으로 조정)
+// base_priority는 UE별 target throughput 차이를 반영한 기본 Priority
 // 스루풋 부족 → Priority 감소 (우선순위 증가)
 // 스루풋 과도 → Priority 증가 (우선순위 감소)
-int target_priority = static_cast<int>(current_priority) - priority_change;
+int target_priority = static_cast<int>(state.base_priority) - priority_change;
 target_priority = std::clamp(target_priority, 1, 127);
 state.target_priority = static_cast<uint8_t>(target_priority);
 ```
 
 **변환 공식:**
 ```
-1. 현재 DSCP → 5QI → current_priority 확인
-2. priority_change = round(PID_output × 10.0)
-3. target_priority = current_priority - priority_change
-4. target_priority = clamp(target_priority, 1, 127)
-5. target_priority에 가장 가까운 DSCP 찾기
+1. base_priority 계산 (UE 초기화 시점, 모든 UE의 target throughput 범위 기반)
+2. PID 출력 계산 (error 기반)
+3. priority_change = round(PID_output × 10.0)
+4. target_priority = base_priority - priority_change
+5. target_priority = clamp(target_priority, 1, 127)
+6. target_priority에 가장 가까운 DSCP 찾기
 ```
 
 **중요:**
@@ -274,20 +276,100 @@ state.target_priority = static_cast<uint8_t>(target_priority);
 - 이것은 PID 출력을 Priority 변화량으로 변환하는 **스케일 팩터**입니다
 - PID 파라미터(Kp, Ki, Kd)는 여전히 설정 가능합니다
 - `priority_scale`은 PID 출력 1.0이 Priority 변화 10에 해당하도록 변환합니다
-- **current_priority 기준으로 조정**: base_priority 없이 현재 Priority에서 직접 조정
+- **base_priority 기준으로 조정**: 각 UE의 target throughput 차이를 Priority 차이로 반영하기 위해 `base_priority`를 사용합니다
+
+#### base_priority (UE별 초기 Priority 차이)
+
+**개념:**
+- `base_priority`는 UE별 target throughput 차이를 Priority 차이로 변환하여 반영하는 기본 Priority 값입니다
+- **위치**: `lib/sdap/throughput_controller.cpp`의 `update_throughput()` 함수 내부 (UE 초기화 시점)
+- **구조체 필드**: `pid_state` 구조체에 `uint8_t base_priority` 필드
+
+**왜 필요한가?**
+
+모든 UE가 동일한 Priority에서 시작하면, target throughput 차이를 반영하기 어렵습니다:
+
+**문제 시나리오:**
+- UE0: target=10.6Mbps
+- UE1: target=9.6Mbps  
+- UE2: target=8.6Mbps
+
+모든 UE가 `current_priority=40`에서 시작하고 PID 출력이 비슷하면:
+- 모든 UE가 비슷한 `target_priority`로 수렴
+- 결과적으로 target throughput 차이가 Priority 차이로 반영되지 않음
+- **동일한 Priority를 가진 UE들이 동일한 스케줄링 우선순위를 받게 되어, throughput 차이를 만들기 어려움**
+
+**해결 방법: base_priority**
+
+`base_priority`를 도입하여 각 UE의 target throughput을 Priority 범위로 매핑:
+
+```cpp
+// 코드 위치: lib/sdap/throughput_controller.cpp:127-145
+
+// 1. 모든 UE의 target throughput 범위 찾기
+double min_target = new_state.target_mbps;
+double max_target = new_state.target_mbps;
+for (const auto& [ue_idx, target_mbps] : ue_target_throughput_map) {
+  min_target = std::min(min_target, target_mbps);
+  max_target = std::max(max_target, target_mbps);
+}
+
+// 2. 각 UE의 target throughput을 Priority 범위로 매핑 (20-100)
+// 높은 target throughput → 낮은 base_priority (높은 우선순위)
+uint8_t base_priority = 100;
+if (max_target > min_target) {
+  double ratio = (new_state.target_mbps - min_target) / (max_target - min_target);
+  base_priority = 100 - static_cast<uint8_t>(ratio * 80);  // 100 ~ 20 범위
+}
+new_state.base_priority = base_priority;
+```
+
+**매핑 예시:**
+- UE0: target=10.6Mbps (최고) → base_priority=20 (최고 우선순위)
+- UE1: target=9.6Mbps (중간) → base_priority=60 (중간 우선순위)
+- UE2: target=8.6Mbps (최저) → base_priority=100 (낮은 우선순위)
+
+**PID 조정 방식:**
+```cpp
+// 코드 위치: lib/sdap/throughput_controller.cpp:308-311
+
+// target_priority = base_priority - priority_change
+// base_priority에서 PID 출력에 따른 priority_change를 빼서 최종 target_priority 계산
+int target_priority = static_cast<int>(state.base_priority) - priority_change;
+target_priority = std::clamp(target_priority, 1, 127);
+```
+
+**효과:**
+1. **초기 Priority 차이 보장**: target throughput이 높은 UE는 낮은 Priority(base_priority)를 가져 높은 우선순위를 받음
+2. **PID 조정의 기반 제공**: PID는 `base_priority`를 기준으로 조정하여 각 UE의 error를 독립적으로 제어
+3. **target throughput 차이 반영**: 서로 다른 `base_priority`에서 시작하므로, PID가 수렴하더라도 초기 Priority 차이가 유지되어 throughput 차이가 반영됨
+
+**요약:**
+- `base_priority`는 UE별 target throughput 차이를 Priority 차이로 변환하는 핵심 메커니즘
+- 없으면 모든 UE가 동일한 Priority에서 시작하여 throughput 차이를 만들기 어려움
+- 있으면 각 UE가 다른 Priority에서 시작하여 스케줄러가 자원을 차별적으로 할당 가능
 
 **예시:**
-- 현재 DSCP = 32 → 5QI → current_priority = 40
+
+UE0 (target=10.6Mbps, base_priority=20)의 경우:
+- base_priority = 20 (높은 우선순위)
 - PID_output = 0.3 (스루풋 부족)
 - priority_change = round(0.3 × 10.0) = 3
-- target_priority = 40 - 3 = 37 (우선순위 증가)
-- Priority 37에 가장 가까운 DSCP 찾기
+- target_priority = 20 - 3 = 17 (우선순위 증가)
+- Priority 17에 가장 가까운 DSCP 찾기
+
+UE2 (target=8.6Mbps, base_priority=100)의 경우:
+- base_priority = 100 (낮은 우선순위)
+- PID_output = 0.3 (스루풋 부족)
+- priority_change = round(0.3 × 10.0) = 3
+- target_priority = 100 - 3 = 97 (우선순위 증가)
+- Priority 97에 가장 가까운 DSCP 찾기
 
 **의미:**
-- PID_output이 1.0이면 Priority가 10만큼 변화
+- PID_output이 1.0이면 Priority가 10만큼 변화 (base_priority 기준)
 - PID_output이 0.5이면 Priority가 5만큼 변화
 - PID_output이 2.0이면 Priority가 20만큼 변화
-- 모든 UE는 동일한 방식으로 current_priority 기준으로 조정됨
+- 각 UE는 자신의 `base_priority`를 기준으로 조정되므로, target throughput 차이가 Priority 차이로 반영됨
 
 ### DSCP 선택 및 저장
 
@@ -376,6 +458,9 @@ final_priority = pf_weight × gbr_weight × prio_weight × delay_weight
 ### 제어 루프 다이어그램
 
 ```
+┌─────────────────────────────────────────────────────────┐
+│  Throughput Controller 제어 루프                        │
+└─────────────────────────────────────────────────────────┘
 
 [초기화] UE별 목표 스루풋 설정
   파일: apps/du/du.cpp 또는 apps/gnb/gnb.cpp
@@ -478,19 +563,31 @@ new_state.target_mbps = preconfigured_it->second;
 // 2. initial_dscp 설정 (기본값: 44)
 new_state.current_dscp = cfg.initial_dscp;
 
-// 3. initial_dscp → 5QI → Priority로 초기 target_priority 설정
-std::optional<five_qi_t> initial_5qi = mapper.map_dscp_to_5qi(cfg.initial_dscp);
-// ... 5QI → Priority 매핑 ...
-new_state.target_priority = qos_chars->priority.value();  // 예: 40
+// 3. base_priority 계산 (모든 UE의 target throughput 범위 기반)
+double min_target = new_state.target_mbps;
+double max_target = new_state.target_mbps;
+for (const auto& [ue_idx, target_mbps] : ue_target_throughput_map) {
+  min_target = std::min(min_target, target_mbps);
+  max_target = std::max(max_target, target_mbps);
+}
+uint8_t base_priority = 100;
+if (max_target > min_target) {
+  double ratio = (new_state.target_mbps - min_target) / (max_target - min_target);
+  base_priority = 100 - static_cast<uint8_t>(ratio * 80);  // 100 ~ 20 범위
+}
+new_state.base_priority = base_priority;
 
-// 4. initial_dscp를 dscp_qos_mapper에 등록
+// 4. 초기 target_priority는 base_priority로 설정
+new_state.target_priority = base_priority;
+
+// 5. initial_dscp를 dscp_qos_mapper에 등록
 mapper.register_dscp_for_ue(ue_index, cfg.initial_dscp);
 ```
 
 **중요**: 
 - UE 등록 **전에** 설정해야 UE가 등록될 때 자동으로 적용됨
-- 초기 `target_priority`는 `initial_dscp`의 Priority로 설정됨
-- base_priority 없이 current_priority 기준으로 동작
+- 초기 `target_priority`는 계산된 `base_priority`로 설정됨
+- `base_priority`는 모든 UE의 target throughput 범위를 기반으로 계산되며, 각 UE의 target throughput 차이를 Priority 차이로 반영 (위 "base_priority (UE별 초기 Priority 차이)" 섹션 참조)
 
 ### 2. 스루풋 측정 및 전달
 
