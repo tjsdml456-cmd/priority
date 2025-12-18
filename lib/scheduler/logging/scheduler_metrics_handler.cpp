@@ -119,7 +119,7 @@ void cell_metrics_handler::handle_ue_deletion(du_ue_index_t ue_index)
   // Remove UE from throughput controller
   auto& throughput_ctrl = throughput_controller::get_instance();
   throughput_ctrl.remove_ue(ue_index);
-    
+  
   if (not enabled()) {
     return;
   }
@@ -410,7 +410,15 @@ void cell_metrics_handler::report_metrics()
   auto next_report = notifier.get_builder();
 
   const std::chrono::milliseconds report_period{data.nof_slots / last_slot_tx.nof_slots_per_subframe()};
-  auto& throughput_ctrl = throughput_controller::get_instance();  
+  auto& throughput_ctrl = throughput_controller::get_instance();
+  
+  // Log report period for debugging (periodically to avoid log spam)
+  static unsigned period_log_counter = 0;
+  if ((period_log_counter++ % 100) == 0) {
+    static srslog::basic_logger& logger = srslog::fetch_basic_logger("SCHED");
+    logger.info("Metrics report period: {}ms (nof_slots={}, slots_per_sf={})",
+                report_period.count(), data.nof_slots, last_slot_tx.nof_slots_per_subframe());
+  }
   
   for (ue_metric_context& ue : ues) {
     // Compute statistics of the UE metrics and push the result to the report.
@@ -418,7 +426,7 @@ void cell_metrics_handler::report_metrics()
     next_report->ue_metrics.push_back(metrics);
     
     // Update throughput controller with current metrics
-    throughput_ctrl.update_throughput(metrics);  
+    throughput_ctrl.update_throughput(metrics);
   }
   next_report->events.swap(pending_events);
 
@@ -642,6 +650,12 @@ cell_metrics_handler::ue_metric_context::compute_report(std::chrono::millisecond
   ret.tot_pusch_prbs_used = data.tot_ul_prbs_used;
   ret.dl_brate_kbps       = static_cast<double>(data.sum_dl_tb_bytes * 8U) / metric_report_period.count();
   ret.ul_brate_kbps       = static_cast<double>(data.sum_ul_tb_bytes * 8U) / metric_report_period.count();
+  
+  // Log detailed throughput calculation for debugging (every time for accurate throughput measurement)
+  static srslog::basic_logger& logger = srslog::fetch_basic_logger("SCHED");
+  logger.info("UE{} Throughput calc: sum_dl_tb_bytes={}, period={}ms, dl_brate_kbps={:.2f} (={:.2f}Mbps), dl_nof_ok={}",
+              ue_index, data.sum_dl_tb_bytes, metric_report_period.count(), 
+              ret.dl_brate_kbps, ret.dl_brate_kbps / 1000.0, data.count_uci_harq_acks);
   ret.dl_nof_ok           = data.count_uci_harq_acks;
   ret.dl_nof_nok          = data.count_uci_harqs - data.count_uci_harq_acks;
   ret.ul_nof_ok           = data.count_crc_acks;
@@ -726,3 +740,4 @@ void scheduler_metrics_handler::rem_cell(du_cell_index_t cell_index)
 {
   cells.erase(cell_index);
 }
+

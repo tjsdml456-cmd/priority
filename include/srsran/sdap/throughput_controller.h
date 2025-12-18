@@ -38,29 +38,34 @@ class throughput_controller
 {
 public:
   /// \brief Configuration for throughput control
+  /// Default values are set in the constructor, but can be overridden via set_config()
   struct config {
-    /// Target throughput in Mbps (e.g., 5.0 for 5Mbps)
-    double target_throughput_mbps = 5.0;
+    /// Target throughput in Mbps (fallback when UE-specific target is not set)
+    double target_throughput_mbps;
     
     /// PID controller parameters
-    double kp = 1.0;  ///< Proportional gain
-    double ki = 0.1;  ///< Integral gain
-    double kd = 0.01; ///< Derivative gain
+    double kp;  ///< Proportional gain
+    double ki;  ///< Integral gain
+    double kd;  ///< Derivative gain
+    
+    /// Priority scaling factor: PID output × priority_scale = priority_change
+    /// Larger value means more aggressive priority changes
+    double priority_scale;
     
     /// Control period in milliseconds (how often to adjust DSCP)
-    std::chrono::milliseconds control_period_ms{1000};
+    std::chrono::milliseconds control_period_ms;
     
-    /// Minimum DSCP value (default: 0)
-    uint8_t min_dscp = 0;
+    /// Minimum DSCP value
+    uint8_t min_dscp;
     
-    /// Maximum DSCP value (default: 63)
-    uint8_t max_dscp = 63;
+    /// Maximum DSCP value
+    uint8_t max_dscp;
     
-    /// Initial DSCP value (default: 32)
-    uint8_t initial_dscp = 32;
+    /// Initial DSCP value
+    uint8_t initial_dscp;
     
     /// Enable/disable throughput control
-    bool enabled = true;
+    bool enabled;
   };
 
   /// \brief Get singleton instance
@@ -78,7 +83,7 @@ public:
 
   /// \brief Set target throughput mapping for multiple UEs at once
   /// \param ue_target_map Map of UE index to target throughput (Mbps)
-  /// Example: {{0, 5.0}, {1, 10.0}, {2, 3.0}} for UE0=5Mbps, UE1=10Mbps, UE2=3Mbps
+  /// Example: {{0, 1.5}, {1, 2.0}, {2, 1.0}} for UE0=1.5Mbps, UE1=2.0Mbps, UE2=1.0Mbps
   void set_target_throughput_map(const std::unordered_map<du_ue_index_t, double>& ue_target_map);
 
   /// \brief Update current throughput from scheduler metrics
@@ -97,22 +102,32 @@ public:
   /// \brief Check if control is enabled for a UE
   bool is_control_enabled(du_ue_index_t ue_index) const;
 
+  /// \brief Get target priority calculated by throughput controller for a UE
+  /// Returns the target priority value that should be used in scheduler
+  /// Returns empty if control is not enabled or UE not found
+  std::optional<uint8_t> get_target_priority(du_ue_index_t ue_index) const;
+
 private:
-  throughput_controller()  = default;
+  // Default: disabled. Config values are only used when enabled=true (after set_target_throughput_map() or set_config())
+  // When disabled, original Priority-based scheduling is used
+  throughput_controller() = default;
   ~throughput_controller() = default;
   throughput_controller(const throughput_controller&) = delete;
   throughput_controller& operator=(const throughput_controller&) = delete;
 
   /// \brief PID controller state for each UE
+  /// All members are explicitly initialized in update_throughput(), so no default values needed
   struct pid_state {
-    double target_mbps = 5.0;
-    double current_mbps = 0.0;
-    double error = 0.0;
-    double integral = 0.0;
-    double last_error = 0.0;
-    uint8_t current_dscp = 32;
+    double target_mbps;
+    double current_mbps;
+    double error;
+    double integral;
+    double last_error;
+    uint8_t current_dscp;
+    uint8_t base_priority;     // Target throughput에 따른 base priority (높은 throughput = 낮은 priority)
+    uint8_t target_priority;   // 최근 계산된 target priority 값 저장 (base_priority + PID adjustment)
     std::chrono::steady_clock::time_point last_update_time;
-    bool enabled = true;
+    bool enabled;
   };
 
   /// \brief Compute new DSCP value using PID controller
@@ -122,7 +137,7 @@ private:
   uint8_t clamp_dscp(uint8_t dscp) const;
 
   mutable std::mutex                              mutex;
-  config                                          cfg;
+  config                                          cfg{};  // Zero-initialized (enabled=false, other values unused until set_config() or set_target_throughput_map())
   std::unordered_map<du_ue_index_t, pid_state>    ue_states;
   std::unordered_map<du_ue_index_t, double>      ue_target_throughput_map;  ///< Pre-configured UE target throughput mapping
 };
