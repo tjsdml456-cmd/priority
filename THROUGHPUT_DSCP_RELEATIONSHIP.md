@@ -376,9 +376,6 @@ final_priority = pf_weight × gbr_weight × prio_weight × delay_weight
 ### 제어 루프 다이어그램
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  Throughput Controller 제어 루프                        │
-└─────────────────────────────────────────────────────────┘
 
 [초기화] UE별 목표 스루풋 설정
   파일: apps/du/du.cpp 또는 apps/gnb/gnb.cpp
