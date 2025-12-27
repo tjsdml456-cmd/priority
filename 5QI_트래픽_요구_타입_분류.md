@@ -274,6 +274,7 @@ Nokia White Paper (Sept 2020)에 따른 DSCP와 5QI 매핑:
 | 66 | GBR | 20 | 100ms | 10⁻² | EF (Expedited Forwarding) | 44 |
 | 67 | GBR | 15 | 100ms | 10⁻³ | AF43 (Assured Forwarding) | 38 |
 | 70 | Non-GBR | 55 | 200ms | 10⁻⁶ | AF33 (Assured Forwarding) | 30 |
+| 75 | GBR | 25 | 50ms | 10⁻² | CS4 (Class Selector) | 32 |
 | 79 | Non-GBR | 65 | 50ms | 10⁻² | CS4 (Class Selector) | 32 |
 | 80 | Non-GBR | 68 | 10ms | 10⁻⁶ | CS3 (Class Selector) | 24 |
 
