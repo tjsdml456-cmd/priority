@@ -20,7 +20,6 @@
 
 set(SOURCES 
     sdap_factory.cpp
-    throughput_controller.cpp
 )
 
 add_library(srsran_sdap STATIC ${SOURCES})

@@ -26,7 +26,6 @@
 #include "../ue_scheduling/grant_params_selector.h"
 #include "srsran/ran/qos/five_qi_qos_mapping.h"
 #include "srsran/sdap/dscp_qos_mapper.h"
-#include "srsran/sdap/throughput_controller.h"
 #include "srsran/srslog/srslog.h"
 #include <algorithm>
 
@@ -383,29 +382,13 @@ void scheduler_time_qos::ue_ctxt::apply_5qi_based_runtime_overrides(const slice_
     // effective_5QI를 사용하여 표준 QoS 특성에서 priority를 가져옴
     // 이 priority 값이 prio_weight 계산에 사용되어 스케줄링 우선순위 결정
     //
-    // [중요] Throughput Controller가 활성화되어 있으면,
-    //        Throughput Controller가 계산한 target_priority를 직접 사용
-    //        (DSCP → 5QI → Priority 경로 대신 직접 Priority 사용)
-    // ============================================================
-    auto& throughput_ctrl = throughput_controller::get_instance();
-    std::optional<uint8_t> target_priority = throughput_ctrl.get_target_priority(ue_index);
-    
+    const standardized_qos_characteristics* qos_chars = get_5qi_to_qos_characteristics_mapping(effective_5qi);
     qos_prio_level_t effective_priority;
-    
-    if (target_priority.has_value()) {
-      // Throughput Controller가 활성화되어 있으면 계산된 target_priority 직접 사용
-      effective_priority = qos_prio_level_t{target_priority.value()};
-      logger.info("[STEP6-SCHED] Throughput Controller Priority 적용 - UE{} LCID{} Priority={} (throughput controller가 계산한 값)",
-                  ue_index, static_cast<unsigned>(lc->lcid), target_priority.value());
+    if (qos_chars != nullptr) {
+      effective_priority = qos_chars->priority;
     } else {
-      // Throughput Controller가 비활성화되어 있으면 DSCP 기반 Priority 사용
-      const standardized_qos_characteristics* qos_chars = get_5qi_to_qos_characteristics_mapping(effective_5qi);
-      if (qos_chars != nullptr) {
-        effective_priority = qos_chars->priority;
-      } else {
-        // 매핑 실패 시 원본 QoS priority 사용
-        effective_priority = lc->qos->qos.priority;
-      }
+      // 매핑 실패 시 원본 QoS priority 사용
+      effective_priority = lc->qos->qos.priority;
     }
     
     // Runtime QoS 업데이트
@@ -416,36 +399,24 @@ void scheduler_time_qos::ue_ctxt::apply_5qi_based_runtime_overrides(const slice_
     // ARP priority remains from Core (not overridden)
     
     // Log runtime QoS override for debugging
-    if (target_priority.has_value()) {
-      // Throughput Controller가 활성화된 경우 로그는 이미 출력됨
-      if (old_priority.value() != effective_priority.value()) {
-        logger.debug("[STEP6-SCHED] Priority 변경 - UE{} LCID{} Priority={}->{} (ARP={})",
-                     ue_index,
-                     static_cast<unsigned>(lc->lcid),
-                     old_priority.value(),
-                     effective_priority.value(),
-                     lc->qos->runtime_arp_priority.value());
-      }
+    // DSCP 기반 Priority 업데이트
+    if (effective_5qi != lc->qos->five_qi) {
+      logger.info("[STEP6-SCHED] Priority 업데이트 (DSCP 기반) - UE{} LCID{} 5QI={}->{} Priority={}->{} (ARP={})",
+                  ue_index,
+                  static_cast<unsigned>(lc->lcid),
+                  lc->qos->five_qi,
+                  effective_5qi,
+                  old_priority.value(),
+                  effective_priority.value(),
+                  lc->qos->runtime_arp_priority.value());
     } else {
-      // DSCP 기반 Priority 업데이트
-      if (effective_5qi != lc->qos->five_qi) {
-        logger.info("[STEP6-SCHED] Priority 업데이트 (DSCP 기반) - UE{} LCID{} 5QI={}->{} Priority={}->{} (ARP={})",
-                    ue_index,
-                    static_cast<unsigned>(lc->lcid),
-                    lc->qos->five_qi,
-                    effective_5qi,
-                    old_priority.value(),
-                    effective_priority.value(),
-                    lc->qos->runtime_arp_priority.value());
-      } else {
-        logger.debug("[STEP6-SCHED] Priority 업데이트 - UE{} LCID{} 5QI={} Priority={}->{} (ARP={})",
-                     ue_index,
-                     static_cast<unsigned>(lc->lcid),
-                     effective_5qi,
-                     old_priority.value(),
-                     effective_priority.value(),
-                     lc->qos->runtime_arp_priority.value());
-      }
+      logger.debug("[STEP6-SCHED] Priority 업데이트 - UE{} LCID{} 5QI={} Priority={}->{} (ARP={})",
+                   ue_index,
+                   static_cast<unsigned>(lc->lcid),
+                   effective_5qi,
+                   old_priority.value(),
+                   effective_priority.value(),
+                   lc->qos->runtime_arp_priority.value());
     }
   }
 }

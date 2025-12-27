@@ -57,7 +57,6 @@
 #include "srsran/f1ap/gateways/f1c_local_connector_factory.h"
 #include "srsran/f1u/local_connector/f1u_local_connector.h"
 #include "srsran/ngap/gateways/n2_connection_client_factory.h"
-#include "srsran/sdap/throughput_controller.h"
 #include "srsran/support/backtrace.h"
 #include "srsran/support/config_parsers.h"
 #include "srsran/support/cpu_features.h"
@@ -551,17 +550,6 @@ int main(int argc, char** argv)
   f1c_gw->attach_cu_cp(o_cucp_obj.get_cu_cp().get_f1c_handler());
 
   o_cuup_obj.unit->get_operation_controller().start();
-
-  
-  /// Initialize throughput controller with UE-specific target throughput mapping
-  auto& throughput_ctrl = throughput_controller::get_instance();
-  std::unordered_map<du_ue_index_t, double> ue_target_throughput_map = {
-      {to_du_ue_index(0), 10.6},  // UE0: 1.5Mbps
-      {to_du_ue_index(1), 9.6},  // UE1: 2.0Mbps
-      {to_du_ue_index(2), 8.6}   // UE2: 1.0Mbps  
-  };
-  throughput_ctrl.set_target_throughput_map(ue_target_throughput_map);
-  gnb_logger.info("Throughput controller initialized with UE-specific target throughput mapping");
 
   // Start processing.
   du_inst.get_operation_controller().start();
