@@ -26,7 +26,6 @@
 #include "srsran/ran/slot_point.h"
 #include "srsran/scheduler/result/sched_result.h"
 #include "srsran/scheduler/scheduler_configurator.h"
-#include "srsran/sdap/throughput_controller.h"
 #include "srsran/srslog/srslog.h"
 
 using namespace srsran;
@@ -116,10 +115,6 @@ void cell_metrics_handler::handle_ue_reconfiguration(du_ue_index_t ue_index)
 
 void cell_metrics_handler::handle_ue_deletion(du_ue_index_t ue_index)
 {
-  // Remove UE from throughput controller
-  auto& throughput_ctrl = throughput_controller::get_instance();
-  throughput_ctrl.remove_ue(ue_index);
-  
   if (not enabled()) {
     return;
   }
@@ -410,23 +405,11 @@ void cell_metrics_handler::report_metrics()
   auto next_report = notifier.get_builder();
 
   const std::chrono::milliseconds report_period{data.nof_slots / last_slot_tx.nof_slots_per_subframe()};
-  auto& throughput_ctrl = throughput_controller::get_instance();
-  
-  // Log report period for debugging (periodically to avoid log spam)
-  static unsigned period_log_counter = 0;
-  if ((period_log_counter++ % 100) == 0) {
-    static srslog::basic_logger& logger = srslog::fetch_basic_logger("SCHED");
-    logger.info("Metrics report period: {}ms (nof_slots={}, slots_per_sf={})",
-                report_period.count(), data.nof_slots, last_slot_tx.nof_slots_per_subframe());
-  }
   
   for (ue_metric_context& ue : ues) {
     // Compute statistics of the UE metrics and push the result to the report.
     scheduler_ue_metrics metrics = ue.compute_report(report_period, nof_slots_per_sf);
     next_report->ue_metrics.push_back(metrics);
-    
-    // Update throughput controller with current metrics
-    throughput_ctrl.update_throughput(metrics);
   }
   next_report->events.swap(pending_events);
 
