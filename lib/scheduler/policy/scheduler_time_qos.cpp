@@ -193,7 +193,35 @@ static double compute_dl_qos_weights(const slice_ue&                  u,
       if (hol_toa.valid() and slot_tx >= hol_toa) {
         const unsigned hol_delay_ms = (slot_tx - hol_toa) / slot_tx.nof_slots_per_subframe();
         const unsigned pdb          = lc->qos->runtime_qos.packet_delay_budget_ms;
-        delay_weight += hol_delay_ms / static_cast<double>(pdb);
+        double delay_contrib = hol_delay_ms / static_cast<double>(pdb);
+        delay_weight += delay_contrib;
+        
+        // Log delay_weight calculation details (periodically)
+        static unsigned delay_log_counter = 0;
+        if ((delay_log_counter++ % 100) == 0) {
+          static srslog::basic_logger& logger = srslog::fetch_basic_logger("SCHED");
+          logger.info("[DELAY-WEIGHT] UE{} LCID{} hol_toa={} slot_tx={} hol_delay_ms={} PDB={}ms delay_contrib={:.3f} delay_weight={:.3f}",
+                      u.ue_index(),
+                      static_cast<unsigned>(lc->lcid),
+                      hol_toa.to_uint(),
+                      slot_tx.to_uint(),
+                      hol_delay_ms,
+                      pdb,
+                      delay_contrib,
+                      delay_weight);
+        }
+      } else {
+        // Log when hol_toa is invalid or condition not met (periodically)
+        static unsigned hol_toa_log_counter = 0;
+        if ((hol_toa_log_counter++ % 100) == 0) {
+          static srslog::basic_logger& logger = srslog::fetch_basic_logger("SCHED");
+          logger.info("[DELAY-WEIGHT] UE{} LCID{} hol_toa_valid={} hol_toa={} slot_tx={} (condition not met, delay_weight not updated)",
+                      u.ue_index(),
+                      static_cast<unsigned>(lc->lcid),
+                      hol_toa.valid(),
+                      hol_toa.valid() ? hol_toa.to_uint() : 0,
+                      slot_tx.to_uint());
+        }
       }
 
       if (not lc->qos->runtime_gbr_qos_info.has_value()) {
@@ -213,7 +241,21 @@ static double compute_dl_qos_weights(const slice_ue&                  u,
 
   // If no QoS flows are configured, the weight is set to 1.0.
   gbr_weight   = policy_params.gbr_enabled and gbr_weight != 0 ? gbr_weight : 1.0;
+  double delay_weight_before = delay_weight;
   delay_weight = policy_params.pdb_enabled and delay_weight != 0 ? delay_weight : 1.0;
+  
+  // Log delay_weight final value and reason (periodically)
+  static unsigned delay_final_log_counter = 0;
+  if ((delay_final_log_counter++ % 100) == 0) {
+    static srslog::basic_logger& logger = srslog::fetch_basic_logger("SCHED");
+    logger.info("[DELAY-WEIGHT-FINAL] UE{} delay_weight_before={:.3f} pdb_enabled={} delay_weight_after={:.3f} (reason: {})",
+                u.ue_index(),
+                delay_weight_before,
+                policy_params.pdb_enabled,
+                delay_weight,
+                (policy_params.pdb_enabled and delay_weight_before != 0) ? "calculated" : 
+                (not policy_params.pdb_enabled) ? "pdb_disabled" : "delay_weight_was_zero");
+  }
 
   double pf_weight = compute_pf_metric(estim_dl_rate, avg_dl_rate, policy_params.pf_fairness_coeff);
   
@@ -245,6 +287,30 @@ static double compute_dl_qos_weights(const slice_ue&                  u,
                 pf_weight,
                 gbr_weight,
                 delay_weight);
+    
+    // Log PDB and GBR values used in scheduling (업데이트된 runtime_qos 값 사용)
+    for (logical_channel_config_ptr lc : *u.logical_channels()) {
+      if (not u.contains(lc->lcid) or not lc->qos.has_value() or u.pending_dl_newtx_bytes(lc->lcid) == 0) {
+        continue;
+      }
+      const auto& runtime_qos = lc->qos->runtime_qos;
+      const char* res_type_str = runtime_qos.res_type == qos_flow_resource_type::gbr ? "GBR" :
+                                  runtime_qos.res_type == qos_flow_resource_type::delay_critical_gbr ? "DelayCriticalGBR" : "non-GBR";
+      if (lc->qos->runtime_gbr_qos_info.has_value()) {
+        logger.info("[SCHED-QoS] UE{} LCID{} PDB={}ms GBR_DL={}bps Type={} (used in scheduling)",
+                    u.ue_index(),
+                    static_cast<unsigned>(lc->lcid),
+                    runtime_qos.packet_delay_budget_ms,
+                    lc->qos->runtime_gbr_qos_info->gbr_dl,
+                    res_type_str);
+      } else {
+        logger.info("[SCHED-QoS] UE{} LCID{} PDB={}ms GBR=None Type={}",
+                    u.ue_index(),
+                    static_cast<unsigned>(lc->lcid),
+                    runtime_qos.packet_delay_budget_ms,
+                    res_type_str);
+      }
+    }
   }
 
   // The return is a combination of ARP and QoS priorities, GBR and PF weight functions.
@@ -377,46 +443,95 @@ void scheduler_time_qos::ue_ctxt::apply_5qi_based_runtime_overrides(const slice_
     }
 
     // ============================================================
-    // [단계 6-2] 5QI → Priority 변환 및 Runtime QoS 업데이트
+    // [단계 6-2] 5QI → Priority 및 PDB 변환 및 Runtime QoS 업데이트
     // ============================================================
-    // effective_5QI를 사용하여 표준 QoS 특성에서 priority를 가져옴
-    // 이 priority 값이 prio_weight 계산에 사용되어 스케줄링 우선순위 결정
+    // effective_5QI를 사용하여 표준 QoS 특성에서 priority와 PDB를 가져옴
+    // 이 값들이 prio_weight와 delay_weight 계산에 사용되어 스케줄링 우선순위 결정
     //
     const standardized_qos_characteristics* qos_chars = get_5qi_to_qos_characteristics_mapping(effective_5qi);
     qos_prio_level_t effective_priority;
+    unsigned effective_pdb;
     if (qos_chars != nullptr) {
       effective_priority = qos_chars->priority;
+      effective_pdb = qos_chars->packet_delay_budget_ms;
     } else {
-      // 매핑 실패 시 원본 QoS priority 사용
+      // 매핑 실패 시 원본 QoS 값 사용
       effective_priority = lc->qos->qos.priority;
+      effective_pdb = lc->qos->qos.packet_delay_budget_ms;
     }
     
-    // Runtime QoS 업데이트
+    // Runtime QoS 업데이트 (priority, PDB, res_type 모두 업데이트)
     auto runtime_qos = lc->qos->runtime_qos;
     qos_prio_level_t old_priority = runtime_qos.priority;
+    unsigned old_pdb = runtime_qos.packet_delay_budget_ms;
+    qos_flow_resource_type old_res_type = runtime_qos.res_type;
     runtime_qos.priority = effective_priority;
+    runtime_qos.packet_delay_budget_ms = effective_pdb;
+    if (qos_chars != nullptr) {
+      runtime_qos.res_type = qos_chars->res_type;
+    }
     lc->qos->set_runtime_qos(runtime_qos);
     // ARP priority remains from Core (not overridden)
+    // GBR bit rate 정보(gbr_qos_info)는 Core에서 받은 값을 유지
+    // (5QI 매핑 테이블에는 res_type만 있고, 실제 GBR bit rate 값은 각 플로우별로 다를 수 있음)
     
     // Log runtime QoS override for debugging
-    // DSCP 기반 Priority 업데이트
+    // DSCP 기반 Priority, PDB, res_type 업데이트
+    const char* old_res_type_str = old_res_type == qos_flow_resource_type::gbr ? "GBR" :
+                                    old_res_type == qos_flow_resource_type::delay_critical_gbr ? "DelayCriticalGBR" : "non-GBR";
+    const char* new_res_type_str = (qos_chars != nullptr) ?
+                                   (qos_chars->res_type == qos_flow_resource_type::gbr ? "GBR" :
+                                    qos_chars->res_type == qos_flow_resource_type::delay_critical_gbr ? "DelayCriticalGBR" : "non-GBR") :
+                                   old_res_type_str;
     if (effective_5qi != lc->qos->five_qi) {
-      logger.info("[STEP6-SCHED] Priority 업데이트 (DSCP 기반) - UE{} LCID{} 5QI={}->{} Priority={}->{} (ARP={})",
+      logger.info("[STEP6-SCHED] QoS 업데이트 (DSCP 기반) - UE{} LCID{} 5QI={}->{} Priority={}->{} PDB={}->{}ms Type={}->{} (ARP={})",
                   ue_index,
                   static_cast<unsigned>(lc->lcid),
                   lc->qos->five_qi,
                   effective_5qi,
                   old_priority.value(),
                   effective_priority.value(),
+                  old_pdb,
+                  effective_pdb,
+                  old_res_type_str,
+                  new_res_type_str,
                   lc->qos->runtime_arp_priority.value());
     } else {
-      logger.debug("[STEP6-SCHED] Priority 업데이트 - UE{} LCID{} 5QI={} Priority={}->{} (ARP={})",
+      logger.debug("[STEP6-SCHED] QoS 업데이트 - UE{} LCID{} 5QI={} Priority={}->{} PDB={}->{}ms Type={}->{} (ARP={})",
                    ue_index,
                    static_cast<unsigned>(lc->lcid),
                    effective_5qi,
                    old_priority.value(),
                    effective_priority.value(),
+                   old_pdb,
+                   effective_pdb,
+                   old_res_type_str,
+                   new_res_type_str,
                    lc->qos->runtime_arp_priority.value());
+    }
+    
+    // Log PDB and GBR information for traffic monitoring (업데이트된 값 사용)
+    static unsigned pdb_gbr_log_counter = 0;
+    if ((pdb_gbr_log_counter++ % 100) == 0) {  // Log every 100th call
+      // 업데이트된 runtime_qos 값 사용
+      const auto& updated_runtime_qos = lc->qos->runtime_qos;
+      if (lc->qos->runtime_gbr_qos_info.has_value()) {
+        logger.info("[STEP6-SCHED] QoS Info - UE{} LCID{} 5QI={} PDB={}ms GBR_DL={}bps GBR_UL={}bps Type={}",
+                    ue_index,
+                    static_cast<unsigned>(lc->lcid),
+                    effective_5qi,
+                    updated_runtime_qos.packet_delay_budget_ms,
+                    lc->qos->runtime_gbr_qos_info->gbr_dl,
+                    lc->qos->runtime_gbr_qos_info->gbr_ul,
+                    new_res_type_str);
+      } else {
+        logger.info("[STEP6-SCHED] QoS Info - UE{} LCID{} 5QI={} PDB={}ms GBR=None Type={}",
+                    ue_index,
+                    static_cast<unsigned>(lc->lcid),
+                    effective_5qi,
+                    updated_runtime_qos.packet_delay_budget_ms,
+                    new_res_type_str);
+      }
     }
   }
 }

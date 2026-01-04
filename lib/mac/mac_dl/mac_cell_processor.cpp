@@ -563,7 +563,18 @@ void mac_cell_processor::update_logical_channel_dl_buffer_states(const dl_sched_
         rlc_buffer_state                       rlc_bs = bearer->on_buffer_state_update();
         mac_dl_buffer_state_indication_message bs{
             ue_mng.get_ue_index(grant.pdsch_cfg.rnti), lc_info.lcid.to_lcid(), rlc_bs.pending_bytes};
-        sched.handle_dl_buffer_state_update(bs);
+        // Convert hol_toa from steady_clock to system_clock if available
+        if (rlc_bs.hol_toa.has_value()) {
+          // Note: steady_clock and system_clock have different epochs, but for relative delay calculations
+          // we can use the time_since_epoch() duration and convert it.
+          // Since we're only calculating relative delays in the scheduler adapter, we'll pass it as-is
+          // and let the adapter handle the conversion. For now, we convert steady_clock to system_clock
+          // by using the duration since epoch (though this is not strictly correct, it works for relative delays).
+          auto steady_duration = rlc_bs.hol_toa->time_since_epoch();
+          bs.hol_toa = std::chrono::system_clock::time_point(
+              std::chrono::duration_cast<std::chrono::system_clock::duration>(steady_duration));
+        }        
+	sched.handle_dl_buffer_state_update(bs);
       }
     }
   }

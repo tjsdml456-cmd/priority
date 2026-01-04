@@ -199,6 +199,17 @@ void ue::handle_dl_buffer_state_indication(lcid_t lcid, unsigned bs, slot_point 
     }
   }
 
+  // Log hol_toa received from RLC (periodically)
+  static unsigned hol_toa_received_log_counter = 0;
+  if ((hol_toa_received_log_counter++ % 100) == 0) {
+    logger.info("[HOL-TOA-RECEIVED] UE{} LCID{} hol_toa_valid={} hol_toa={} pending_bytes={}",
+                ue_index,
+                static_cast<unsigned>(lcid),
+                hol_toa.valid(),
+                hol_toa.valid() ? hol_toa.to_uint() : 0,
+                pending_bytes);
+  }
+    
   dl_lc_ch_mgr.handle_dl_buffer_status_indication(lcid, pending_bytes, hol_toa);
 }
 
