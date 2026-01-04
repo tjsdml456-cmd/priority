@@ -174,85 +174,19 @@ private:
   static const std::map<uint8_t, five_qi_t>& get_dscp_to_5qi_mapping_table()
   {
     static const std::map<uint8_t, five_qi_t> mapping_table = {
-      // 최고 우선순위 (DSCP 56-63) -> priority 5-7
-      {63, uint_to_five_qi(69)},  // priority=5 (Non-GBR)
-      {62, uint_to_five_qi(85)},  // priority=21 (Delay Critical GBR)
-      {61, uint_to_five_qi(65)},  // priority=7 (GBR)
-      {60, uint_to_five_qi(5)},   // priority=10 (Non-GBR)
-      {59, uint_to_five_qi(67)},  // priority=15 (GBR)
-      {58, uint_to_five_qi(82)},  // priority=19 (Delay Critical GBR)
-      {57, uint_to_five_qi(1)},   // priority=20 (GBR)
-      {56, uint_to_five_qi(66)},  // priority=20 (GBR)
-      
-      // 높은 우선순위 (DSCP 48-55) -> priority 22-30
-      {55, uint_to_five_qi(83)},  // priority=22 (Delay Critical GBR)
-      {54, uint_to_five_qi(84)},  // priority=24 (Delay Critical GBR)
-      {53, uint_to_five_qi(3)},   // priority=30 (GBR)
-      {52, uint_to_five_qi(2)},   // priority=40 (GBR)
-      {51, uint_to_five_qi(4)},   // priority=50 (GBR)
-      {50, uint_to_five_qi(70)},  // priority=55 (Non-GBR)
-      {49, uint_to_five_qi(6)},   // priority=60 (Non-GBR)
-      {48, uint_to_five_qi(79)},  // priority=65 (Non-GBR)
-      
-      // 중간 우선순위 (DSCP 40-47) -> priority 68-80
-      {47, uint_to_five_qi(80)},  // priority=68 (Non-GBR)
-      {46, uint_to_five_qi(7)},   // priority=70 (Non-GBR)
-      {45, uint_to_five_qi(8)},   // priority=80 (Non-GBR)
-      {44, uint_to_five_qi(9)},   // priority=90 (Non-GBR)
-      {43, uint_to_five_qi(69)},  // priority=5 (Non-GBR) - 재사용
-      {42, uint_to_five_qi(85)},  // priority=21 (Delay Critical GBR용) - 재사
-      {41, uint_to_five_qi(65)},  // priority=7 (GBR) - 재사용
-      {40, uint_to_five_qi(5)},   // priority=10 (Non-GBR) - 재사용
-      
-      // 중간-낮은 우선순위 (DSCP 32-39)
-      {39, uint_to_five_qi(67)},  // priority=15 (GBR) - 재사용
-      {38, uint_to_five_qi(82)},  // priority=19 (Delay Critical GBR) - 재사용
-      {37, uint_to_five_qi(1)},   // priority=20 (GBR) - 재사용
-      {36, uint_to_five_qi(66)},  // priority=20 (GBR) - 재사용
-      {35, uint_to_five_qi(83)},  // priority=22 (Delay Critical GBR) - 재사용
-      {34, uint_to_five_qi(84)},  // priority=24 (Delay Critical GBR) - 재사용
-      {33, uint_to_five_qi(3)},   // priority=30 (GBR) - 재사용
-      {32, uint_to_five_qi(2)},   // priority=40 (GBR) - 재사용
-      
-      // 낮은 우선순위 (DSCP 24-31)
-      {31, uint_to_five_qi(4)},   // priority=50 (GBR) - 재사용
-      {30, uint_to_five_qi(70)},  // priority=55 (Non-GBR) - 재사용
-      {29, uint_to_five_qi(6)},   // priority=60 (Non-GBR) - 재사용
-      {28, uint_to_five_qi(79)},  // priority=65 (Non-GBR) - 재사용
-      {27, uint_to_five_qi(80)},  // priority=68 (Non-GBR) - 재사용
-      {26, uint_to_five_qi(7)},   // priority=70 (Non-GBR) - 재사용
-      {25, uint_to_five_qi(8)},   // priority=80 (Non-GBR) - 재사용
-      {24, uint_to_five_qi(9)},   // priority=90 (Non-GBR) - 재사용
-      
-      // 낮은 우선순위 (DSCP 16-23)
-      {23, uint_to_five_qi(69)},  // priority=5 (Non-GBR) - 재사용
-      {22, uint_to_five_qi(85)},  // priority=21 (Delay Critical GBR) - 재사용
-      {21, uint_to_five_qi(65)},  // priority=7 (GBR) - 재사용
-      {20, uint_to_five_qi(5)},   // priority=10 (Non-GBR) - 재사용
-      {19, uint_to_five_qi(67)},  // priority=15 (GBR) - 재사용
-      {18, uint_to_five_qi(82)},  // priority=19 (Delay Critical GBR) - 재사용
-      {17, uint_to_five_qi(1)},   // priority=20 (GBR) - 재사용
-      {16, uint_to_five_qi(66)},  // priority=20 (GBR) - 재사용
-      
-      // 최저 우선순위 (DSCP 8-15)
-      {15, uint_to_five_qi(83)},  // priority=22 (Delay Critical GBR) - 재사용
-      {14, uint_to_five_qi(84)},  // priority=24 (Delay Critical GBR) - 재사용
-      {13, uint_to_five_qi(3)},   // priority=30 (GBR) - 재사용
-      {12, uint_to_five_qi(2)},   // priority=40 (GBR) - 재사용
-      {11, uint_to_five_qi(4)},   // priority=50 (GBR) - 재사용
-      {10, uint_to_five_qi(70)},  // priority=55 (Non-GBR) - 재사용
-      {9,  uint_to_five_qi(6)},   // priority=60 (Non-GBR) - 재사용
-      {8,  uint_to_five_qi(79)},  // priority=65 (Non-GBR) - 재사용
-      
-      // 최저 우선순위 (DSCP 0-7)
-      {7,  uint_to_five_qi(80)},  // priority=68 (Non-GBR) - 재사용
-      {6,  uint_to_five_qi(7)},   // priority=70 (Non-GBR) - 재사용
-      {5,  uint_to_five_qi(8)},   // priority=80 (Non-GBR) - 재사용
-      {4,  uint_to_five_qi(9)},   // priority=90 (Non-GBR) - 재사용
-      {3,  uint_to_five_qi(9)},   // priority=90 (Non-GBR) - 재사용
-      {2,  uint_to_five_qi(9)},   // priority=90 (Non-GBR) - 재사용
-      {1,  uint_to_five_qi(9)},   // priority=90 (Non-GBR) - 재사용
-      {0,  uint_to_five_qi(9)},   // priority=90 (Non-GBR) - 재사용
+      {44, uint_to_five_qi(1)},   // GBR, Priority=20
+      {34, uint_to_five_qi(2)},   // GBR, Priority=40
+      {32, uint_to_five_qi(3)},   // GBR, Priority=30
+      {28, uint_to_five_qi(4)},   // GBR, Priority=50
+      {40, uint_to_five_qi(5)},   // non-GBR, Priority=10
+      {26, uint_to_five_qi(6)},   // non-GBR, Priority=60
+      {22, uint_to_five_qi(7)},   // non-GBR, Priority=70
+      {0, uint_to_five_qi(9)},    // non-GBR, Priority=90
+      {44, uint_to_five_qi(66)},  // GBR, Priority=20
+      {38, uint_to_five_qi(67)},  // GBR, Priority=15
+      {30, uint_to_five_qi(70)},  // non-GBR, Priority=55
+      {32, uint_to_five_qi(79)},  // non-GBR, Priority=65
+      {24, uint_to_five_qi(80)}   // non-GBR, Priority=68    
     };
     return mapping_table;
   }
