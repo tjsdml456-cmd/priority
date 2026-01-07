@@ -333,14 +333,23 @@ rlc_buffer_state rlc_tx_um_entity::get_buffer_state()
 
   // minimum bytes needed to tx SDU under segmentation + header (if applicable)
   uint32_t segment_bytes = 0;
+  std::optional<std::chrono::time_point<std::chrono::steady_clock>> steady_hol_toa;  
   if (not sdu.buf.empty()) {
-    segment_bytes = (sdu.buf.length() - next_so) + head_len_not_first;
-    bs.hol_toa    = sdu.time_of_arrival;
+    segment_bytes  = (sdu.buf.length() - next_so) + head_len_not_first;
+    steady_hol_toa = sdu.time_of_arrival;  
   } else {
     const rlc_sdu* next_sdu = sdu_queue.front();
     if (next_sdu != nullptr) {
-      bs.hol_toa = next_sdu->time_of_arrival;
+      steady_hol_toa = next_sdu->time_of_arrival;    
     }
+  }
+
+  // Convert hol_toa from steady_clock to system_clock to avoid clock epoch conversion issues in upper layers.
+  // We calculate the relative delay and apply it to system_clock::now().
+  if (steady_hol_toa.has_value()) {
+    auto now_steady = std::chrono::steady_clock::now();
+    auto delay = now_steady - steady_hol_toa.value();
+    bs.hol_toa = std::chrono::system_clock::now() - delay;  
   }
 
   bs.pending_bytes = queue_bytes + segment_bytes;

@@ -230,12 +230,15 @@ static double compute_dl_qos_weights(const slice_ue&                  u,
       }
 
       // GBR flow.
-      double dl_avg_rate = u.dl_avg_bit_rate(lc->lcid);
-      if (dl_avg_rate != 0) {
-        gbr_weight += std::min(lc->qos->runtime_gbr_qos_info->gbr_dl / dl_avg_rate, max_metric_weight);
-      } else {
-        gbr_weight += max_metric_weight;
-      }
+      // TODO: Hardcoded for testing - gbr_weight fixed to 5.0
+      gbr_weight += 5.0;
+      // Original code (commented out):
+      // double dl_avg_rate = u.dl_avg_bit_rate(lc->lcid);
+      // if (dl_avg_rate != 0) {
+      //   gbr_weight += std::min(lc->qos->runtime_gbr_qos_info->gbr_dl / dl_avg_rate, max_metric_weight);
+      // } else {
+      //   gbr_weight += max_metric_weight;
+      // }
     }
   }
 
@@ -364,13 +367,16 @@ static double compute_ul_qos_weights(const slice_ue&                  u,
       }
 
       // GBR flow.
-      lcg_id_t lcg_id  = u.get_lcg_id(lc->lcid);
-      double   ul_rate = u.ul_avg_bit_rate(lcg_id);
-      if (ul_rate != 0) {
-        gbr_weight += std::min(lc->qos->runtime_gbr_qos_info->gbr_ul / ul_rate, max_metric_weight);
-      } else {
-        gbr_weight = max_metric_weight;
-      }
+      // TODO: Hardcoded for testing - gbr_weight fixed to 5.0
+      gbr_weight += 5.0;
+      // Original code (commented out):
+      // lcg_id_t lcg_id  = u.get_lcg_id(lc->lcid);
+      // double   ul_rate = u.ul_avg_bit_rate(lcg_id);
+      // if (ul_rate != 0) {
+      //   gbr_weight += std::min(lc->qos->runtime_gbr_qos_info->gbr_ul / ul_rate, max_metric_weight);
+      // } else {
+      //   gbr_weight = max_metric_weight;
+      // }
     }
   }
 

@@ -173,13 +173,21 @@ rlc_buffer_state rlc_tx_tm_entity::get_buffer_state()
 {
   rlc_buffer_state bs = {};
 
+  std::optional<std::chrono::time_point<std::chrono::steady_clock>> steady_hol_toa;
   if (not sdu.buf.empty()) {
-    bs.hol_toa = sdu.time_of_arrival;
+    steady_hol_toa = sdu.time_of_arrival;  
   } else {
     const rlc_sdu* next_sdu = sdu_queue.front();
     if (next_sdu != nullptr) {
-      bs.hol_toa = next_sdu->time_of_arrival;
+      steady_hol_toa = next_sdu->time_of_arrival;    
     }
+  }
+  // Convert hol_toa from steady_clock to system_clock to avoid clock epoch conversion issues in upper layers.
+  // We calculate the relative delay and apply it to system_clock::now().
+  if (steady_hol_toa.has_value()) {
+    auto now_steady = std::chrono::steady_clock::now();
+    auto delay = now_steady - steady_hol_toa.value();
+    bs.hol_toa = std::chrono::system_clock::now() - delay;
   }
 
   bs.pending_bytes = sdu_queue.get_state().n_bytes + sdu.buf.length();

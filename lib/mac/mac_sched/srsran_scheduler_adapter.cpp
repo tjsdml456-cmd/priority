@@ -247,13 +247,20 @@ void srsran_scheduler_adapter::handle_dl_buffer_state_update(
   bs.ue_index = mac_dl_bs_ind.ue_index;
   bs.lcid     = mac_dl_bs_ind.lcid;
   bs.bs       = mac_dl_bs_ind.bs;
+  
+  // Convert hol_toa from system_clock to slot_point.
+  // hol_toa is already in system_clock (converted in RLC layer), so we can safely convert to slot_point.  
   if (mac_dl_bs_ind.hol_toa.has_value()) {
     // Check if at least one slot indication has been processed.
     const high_resolution_clock::time_point sl_tp = last_slot_tp.load(std::memory_order_relaxed);
     if (sl_tp != high_resolution_clock::time_point{}) {
-      // Convert HOL TOA from chrono time point to slots.
-      bs.hol_toa =
-          chrono_to_slot_point(mac_dl_bs_ind.hol_toa.value(), sl_tp, last_slot_point.load(std::memory_order_relaxed));
+      // Convert system_clock to high_resolution_clock, then to slot_point.
+      // Since both clocks may have different epochs, we use the relative delay approach.
+      auto system_toa = mac_dl_bs_ind.hol_toa.value();
+      auto system_now = system_clock::now();
+      auto delay = system_now - system_toa;
+      auto hr_toa = sl_tp - std::chrono::duration_cast<high_resolution_clock::duration>(delay);
+      bs.hol_toa = chrono_to_slot_point(hr_toa, sl_tp, last_slot_point.load(std::memory_order_relaxed));    
     }
   }
 

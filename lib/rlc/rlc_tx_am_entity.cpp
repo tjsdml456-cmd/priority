@@ -1025,18 +1025,19 @@ rlc_buffer_state rlc_tx_am_entity::get_buffer_state()
 
   // minimum bytes needed to tx SDU under segmentation + header (if applicable)
   uint32_t segment_bytes = 0;
+  std::optional<std::chrono::time_point<std::chrono::steady_clock>> steady_hol_toa;  
   if (sn_under_segmentation != INVALID_RLC_SN) {
     if (tx_window.has_sn(sn_under_segmentation)) {
       rlc_tx_am_sdu_info& sdu_info = tx_window[sn_under_segmentation];
       segment_bytes                = sdu_info.sdu.length() - sdu_info.next_so + head_max_size;
-      bs.hol_toa                   = sdu_info.time_of_arrival;
+      steady_hol_toa               = sdu_info.time_of_arrival;    
     } else {
       logger.log_info("Buffer state ignores SDU under segmentation. sn={} not in tx_window.", sn_under_segmentation);
     }
   } else {
     const rlc_sdu* next_sdu = sdu_queue.front();
     if (next_sdu != nullptr) {
-      bs.hol_toa = next_sdu->time_of_arrival;
+      steady_hol_toa = next_sdu->time_of_arrival;    
     }
   }
 
@@ -1051,7 +1052,15 @@ rlc_buffer_state rlc_tx_am_entity::get_buffer_state()
     retx_queue.pop();
   }
   if (!retx_queue.empty()) {
-    bs.hol_toa = tx_window[retx_queue.front().sn].time_of_arrival;
+    steady_hol_toa = tx_window[retx_queue.front().sn].time_of_arrival;
+  }
+
+  // Convert hol_toa from steady_clock to system_clock to avoid clock epoch conversion issues in upper layers.
+  // We calculate the relative delay and apply it to system_clock::now().
+  if (steady_hol_toa.has_value()) {
+    auto now_steady = std::chrono::steady_clock::now();
+    auto delay = now_steady - steady_hol_toa.value();
+    bs.hol_toa = std::chrono::system_clock::now() - delay;  
   }
 
   // status report size
