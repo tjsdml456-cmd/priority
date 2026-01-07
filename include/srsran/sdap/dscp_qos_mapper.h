@@ -186,7 +186,11 @@ private:
       {38, uint_to_five_qi(67)},  // GBR, Priority=15
       {30, uint_to_five_qi(70)},  // non-GBR, Priority=55
       {32, uint_to_five_qi(79)},  // non-GBR, Priority=65
-      {24, uint_to_five_qi(80)}   // non-GBR, Priority=68    
+      {24, uint_to_five_qi(80)},   // non-GBR, Priority=68    
+      {17, uint_to_five_qi(82)},  // Delay Critical GBR, Priority=19
+      {16, uint_to_five_qi(83)},  // Delay Critical GBR, Priority=22
+      {15, uint_to_five_qi(84)},  // Delay Critical GBR, Priority=24
+      {14, uint_to_five_qi(85)}   // Delay Critical GBR, Priority=21
     };
     return mapping_table;
   }

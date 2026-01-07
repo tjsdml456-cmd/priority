@@ -24,6 +24,7 @@
 #include "srsran/ran/resource_block.h"
 #include "srsran/support/math/math_utils.h"
 #include "srsran/support/srsran_assert.h"
+#include "srsran/srslog/srslog.h"
 #include <algorithm>
 
 using namespace srsran;
@@ -38,8 +39,22 @@ static unsigned tbs_calculator_step3(float nof_info)
   unsigned nof_info_prime =
       std::max(24U, pow2(n) * static_cast<unsigned>(std::floor(nof_info / static_cast<float>(pow2(n)))));
 
+  // Log Step 3 calculation (periodically to avoid log spam)
+  static unsigned step3_log_counter = 0;
+  if ((step3_log_counter++ % 100) == 0) {
+    static srslog::basic_logger& logger = srslog::fetch_basic_logger("TBS");
+    logger.debug("[TBS-STEP3] nof_info={:.2f}, n={}, nof_info_prime={}", nof_info, n, nof_info_prime);
+  }
+
   // Find the closest TBS that is not less than nof_info_prime.
-  return tbs_calculator_table_find_smallest_not_less_than(nof_info_prime);
+  unsigned tbs = tbs_calculator_table_find_smallest_not_less_than(nof_info_prime);
+  
+  if ((step3_log_counter % 100) == 1) {
+    static srslog::basic_logger& logger = srslog::fetch_basic_logger("TBS");
+    logger.debug("[TBS-STEP3] Final TBS={} bits (={:.2f} bytes)", tbs, tbs / 8.0);
+  }
+  
+  return tbs;
 }
 
 static unsigned tbs_calculator_step4(float nof_info, float tcr)
@@ -56,7 +71,17 @@ static unsigned tbs_calculator_step4(float nof_info, float tcr)
     C = divide_ceil(nof_info_prime + 24, 8424);
   }
 
-  return 8 * C * divide_ceil(nof_info_prime + 24, 8 * C) - 24;
+  unsigned tbs = 8 * C * divide_ceil(nof_info_prime + 24, 8 * C) - 24;
+
+  // Log Step 4 calculation (periodically to avoid log spam)
+  static unsigned step4_log_counter = 0;
+  if ((step4_log_counter++ % 100) == 0) {
+    static srslog::basic_logger& logger = srslog::fetch_basic_logger("TBS");
+    logger.debug("[TBS-STEP4] nof_info={:.2f}, tcr={:.3f}, n={}, nof_info_prime={}, C={}, TBS={} bits (={:.2f} bytes)",
+                 nof_info, tcr, n, nof_info_prime, C, tbs, tbs / 8.0);
+  }
+
+  return tbs;
 }
 
 static unsigned
@@ -65,12 +90,28 @@ tbs_calculator_step2(float scaling, unsigned nof_re, float tcr, unsigned modulat
   float nof_info = scaling * static_cast<float>(nof_re) * tcr * static_cast<float>(modulation_level) *
                    static_cast<float>(nof_layers);
 
+  // Log Step 2 calculation (periodically to avoid log spam)
+  static unsigned step2_log_counter = 0;
+  if ((step2_log_counter++ % 100) == 0) {
+    static srslog::basic_logger& logger = srslog::fetch_basic_logger("TBS");
+    logger.debug("[TBS-STEP2] scaling={:.3f}, nof_re={}, tcr={:.3f}, modulation_level={}, nof_layers={}, nof_info={:.2f} bits",
+                 scaling, nof_re, tcr, modulation_level, nof_layers, nof_info);
+  }
+
   // Step 3. Determine TBS when nof_info <= 3824.
   if (nof_info <= 3824) {
+    if ((step2_log_counter % 100) == 1) {
+      static srslog::basic_logger& logger = srslog::fetch_basic_logger("TBS");
+      logger.debug("[TBS-STEP2] nof_info <= 3824, using Step 3 (table lookup)");
+    }
     return tbs_calculator_step3(nof_info);
   }
 
   // Step 4. Determine TBS when nof_info > 3824.
+  if ((step2_log_counter % 100) == 1) {
+    static srslog::basic_logger& logger = srslog::fetch_basic_logger("TBS");
+    logger.debug("[TBS-STEP2] nof_info > 3824, using Step 4 (formula calculation)");
+  }
   return tbs_calculator_step4(nof_info, tcr);
 }
 
@@ -118,7 +159,17 @@ unsigned srsran::tbs_calculator_table_find_smallest_not_less_than(unsigned nof_i
                 nof_info_prime,
                 3824);
 
-  return table_valid_tbs[index];
+  unsigned tbs = table_valid_tbs[index];
+
+  // Log table lookup (periodically)
+  static unsigned table_log_counter = 0;
+  if ((table_log_counter++ % 100) == 0) {
+    static srslog::basic_logger& logger = srslog::fetch_basic_logger("TBS");
+    logger.debug("[TBS-TABLE] nof_info_prime={}, index={}, TBS={} bits (={:.2f} bytes)", 
+                 nof_info_prime, index, tbs, tbs / 8.0);
+  }
+
+  return tbs;
 }
 
 unsigned srsran::tbs_calculator_calculate(const tbs_calculator_configuration& config)
@@ -135,10 +186,29 @@ unsigned srsran::tbs_calculator_calculate(const tbs_calculator_configuration& co
                 "Modulation scheme should be QPSK or higher, provided {}.",
                 fmt::underlying(config.mcs_descr.modulation));
 
+  // Log Step 1 calculation (periodically to avoid log spam)
+  static unsigned step1_log_counter = 0;
+  if ((step1_log_counter++ % 100) == 0) {
+    static srslog::basic_logger& logger = srslog::fetch_basic_logger("TBS");
+    logger.debug("[TBS-STEP1] nof_symb_sh={}, nof_dmrs_prb={}, nof_oh_prb={}, n_prb={}, nof_re_prime={}, nof_re={}, scaling={:.3f}",
+                 config.nof_symb_sh, config.nof_dmrs_prb, config.nof_oh_prb, config.n_prb, nof_re_prime, nof_re, scaling);
+  }
+
   // Step 2. Intermediate number of information bits.
-  return tbs_calculator_step2(scaling,
-                              nof_re,
-                              config.mcs_descr.get_normalised_target_code_rate(),
-                              get_bits_per_symbol(config.mcs_descr.modulation),
-                              config.nof_layers);
+  unsigned tbs = tbs_calculator_step2(scaling,
+                                      nof_re,
+                                      config.mcs_descr.get_normalised_target_code_rate(),
+                                      get_bits_per_symbol(config.mcs_descr.modulation),
+                                      config.nof_layers);
+
+  // Log final TBS result (periodically)
+  if ((step1_log_counter % 100) == 1) {
+    static srslog::basic_logger& logger = srslog::fetch_basic_logger("TBS");
+    logger.info("[TBS-CALC] Final TBS={} bits (={:.2f} bytes) for n_prb={}, nof_symb_sh={}, modulation={}, layers={}",
+                tbs, tbs / 8.0, config.n_prb, config.nof_symb_sh,
+                fmt::underlying(config.mcs_descr.modulation), config.nof_layers);
+  }
+
+  return tbs;
 }
+

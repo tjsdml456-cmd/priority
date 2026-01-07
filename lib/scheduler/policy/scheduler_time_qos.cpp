@@ -230,20 +230,32 @@ static double compute_dl_qos_weights(const slice_ue&                  u,
       }
 
       // GBR flow.
-      // TODO: Hardcoded for testing - gbr_weight fixed to 5.0
-      gbr_weight += 5.0;
-      // Original code (commented out):
-      // double dl_avg_rate = u.dl_avg_bit_rate(lc->lcid);
-      // if (dl_avg_rate != 0) {
-      //   gbr_weight += std::min(lc->qos->runtime_gbr_qos_info->gbr_dl / dl_avg_rate, max_metric_weight);
-      // } else {
-      //   gbr_weight += max_metric_weight;
-      // }
+      double dl_avg_rate = u.dl_avg_bit_rate(lc->lcid);
+      if (dl_avg_rate != 0) {
+        gbr_weight += std::min(lc->qos->runtime_gbr_qos_info->gbr_dl / dl_avg_rate, max_metric_weight);
+      } else {
+        gbr_weight += max_metric_weight;
+      }
     }
   }
 
   // If no QoS flows are configured, the weight is set to 1.0.
+  double gbr_weight_before = gbr_weight;
   gbr_weight   = policy_params.gbr_enabled and gbr_weight != 0 ? gbr_weight : 1.0;
+  
+  // Log gbr_weight calculation details (periodically)
+  static unsigned gbr_weight_log_counter = 0;
+  if ((gbr_weight_log_counter++ % 100) == 0) {
+    static srslog::basic_logger& logger = srslog::fetch_basic_logger("SCHED");
+    logger.info("[GBR-WEIGHT] UE{} gbr_enabled={} gbr_weight_before={:.3f} gbr_weight_after={:.3f} (reason: {})",
+                u.ue_index(),
+                policy_params.gbr_enabled,
+                gbr_weight_before,
+                gbr_weight,
+                (policy_params.gbr_enabled and gbr_weight_before != 0) ? "calculated" : 
+                (not policy_params.gbr_enabled) ? "gbr_disabled" : "no_gbr_flows");
+  }
+  
   double delay_weight_before = delay_weight;
   delay_weight = policy_params.pdb_enabled and delay_weight != 0 ? delay_weight : 1.0;
   
@@ -367,16 +379,13 @@ static double compute_ul_qos_weights(const slice_ue&                  u,
       }
 
       // GBR flow.
-      // TODO: Hardcoded for testing - gbr_weight fixed to 5.0
-      gbr_weight += 5.0;
-      // Original code (commented out):
-      // lcg_id_t lcg_id  = u.get_lcg_id(lc->lcid);
-      // double   ul_rate = u.ul_avg_bit_rate(lcg_id);
-      // if (ul_rate != 0) {
-      //   gbr_weight += std::min(lc->qos->runtime_gbr_qos_info->gbr_ul / ul_rate, max_metric_weight);
-      // } else {
-      //   gbr_weight = max_metric_weight;
-      // }
+      lcg_id_t lcg_id = u.get_lcg_id(lc->lcid);
+      double   ul_rate = u.ul_avg_bit_rate(lcg_id);
+      if (ul_rate != 0) {
+        gbr_weight += std::min(lc->qos->runtime_gbr_qos_info->gbr_ul / ul_rate, max_metric_weight);
+      } else {
+        gbr_weight = max_metric_weight;
+      }
     }
   }
 
@@ -699,5 +708,6 @@ void scheduler_time_qos::ue_ctxt::save_ul_alloc(unsigned alloc_bytes)
   }
   ul_sum_alloc_bytes += alloc_bytes;
 }
+
 
 

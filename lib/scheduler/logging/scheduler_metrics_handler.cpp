@@ -636,9 +636,10 @@ cell_metrics_handler::ue_metric_context::compute_report(std::chrono::millisecond
   
   // Log detailed throughput calculation for debugging (every time for accurate throughput measurement)
   static srslog::basic_logger& logger = srslog::fetch_basic_logger("SCHED");
-  logger.info("UE{} Throughput calc: sum_dl_tb_bytes={}, period={}ms, dl_brate_kbps={:.2f} (={:.2f}Mbps), dl_nof_ok={}",
+  logger.info("UE{} Throughput calc: sum_dl_tb_bytes={}, period={}ms, dl_brate_kbps={:.2f} (={:.2f}Mbps), dl_nof_ok={}, ul_brate_kbps={:.2f} (={:.2f}Mbps), ul_nof_ok={}",
               ue_index, data.sum_dl_tb_bytes, metric_report_period.count(), 
-              ret.dl_brate_kbps, ret.dl_brate_kbps / 1000.0, data.count_uci_harq_acks);
+              ret.dl_brate_kbps, ret.dl_brate_kbps / 1000.0, data.count_uci_harq_acks,
+              ret.ul_brate_kbps, ret.ul_brate_kbps / 1000.0, data.count_crc_acks); 
   ret.dl_nof_ok           = data.count_uci_harq_acks;
   ret.dl_nof_nok          = data.count_uci_harqs - data.count_uci_harq_acks;
   ret.ul_nof_ok           = data.count_crc_acks;
