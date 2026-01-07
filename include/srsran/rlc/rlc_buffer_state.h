@@ -36,7 +36,8 @@ struct rlc_buffer_state {
   /// Amount of bytes pending for transmission.
   unsigned pending_bytes = 0;
   /// Head of line (HOL) time of arrival (TOA) holds the TOA of the oldest SDU or ReTx that is queued for transmission.
-  std::optional<std::chrono::time_point<std::chrono::steady_clock>> hol_toa;
+  /// Uses system_clock to avoid clock epoch conversion issues when passing to MAC and scheduler layers.
+  std::optional<std::chrono::time_point<std::chrono::system_clock>> hol_toa;
 };
 } // namespace srsran
 
