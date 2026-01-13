@@ -69,9 +69,40 @@ void dl_logical_channel_manager::slot_indication()
 {
   // Update the bit rates of the UE logical channels with tracked bit rates.
   for (lcid_t lcid : sorted_channels) {
-    if (not is_srb(lcid) and channels[lcid].avg_bytes_per_slot.size() > 0) {
-      channels[lcid].avg_bytes_per_slot.push(channels[lcid].last_sched_bytes);
-      channels[lcid].last_sched_bytes = 0;
+    if (not is_srb(lcid)) {
+      // Check if avg_bytes_per_slot needs to be initialized for GBR flows
+      // This handles cases where runtime_qos.res_type changed to GBR after configure() was called
+      if (channels[lcid].avg_bytes_per_slot.size() == 0 and channel_configs.has_value() and
+          channel_configs->contains(lcid)) {
+        logical_channel_config_ptr lc_cfg = (*channel_configs)[lcid];
+        if (lc_cfg->qos.has_value()) {
+          bool is_gbr_flow = false;
+          unsigned win_size_msec = 2000; // Default 2000ms
+          
+          if (lc_cfg->qos.value().gbr_qos_info.has_value()) {
+            is_gbr_flow = true;
+            if (lc_cfg->qos.value().qos.average_window_ms.has_value()) {
+              win_size_msec = lc_cfg->qos.value().qos.average_window_ms.value();
+            }
+          } else if (lc_cfg->qos.value().runtime_qos.res_type == qos_flow_resource_type::gbr ||
+                     lc_cfg->qos.value().runtime_qos.res_type == qos_flow_resource_type::delay_critical_gbr) {
+            is_gbr_flow = true;
+            if (lc_cfg->qos.value().qos.average_window_ms.has_value()) {
+              win_size_msec = lc_cfg->qos.value().qos.average_window_ms.value();
+            }
+          }
+          
+          if (is_gbr_flow) {
+            channels[lcid].avg_bytes_per_slot.resize(win_size_msec * slots_per_sec / 1000);
+          }
+        }
+      }
+      
+      // Push last_sched_bytes if avg_bytes_per_slot is initialized
+      if (channels[lcid].avg_bytes_per_slot.size() > 0) {
+        channels[lcid].avg_bytes_per_slot.push(channels[lcid].last_sched_bytes);
+        channels[lcid].last_sched_bytes = 0;
+      }   
     }
   }
 }
@@ -179,10 +210,31 @@ void dl_logical_channel_manager::configure(logical_channel_config_list_ptr log_c
   // Set new LC configurations.
   for (logical_channel_config_ptr ch_cfg : *channel_configs) {
     channels[ch_cfg->lcid].active = true;
-    if (not is_srb(ch_cfg->lcid) and ch_cfg->qos.has_value() and ch_cfg->qos.value().gbr_qos_info.has_value()) {
+    if (not is_srb(ch_cfg->lcid) and ch_cfg->qos.has_value()) {
       // Track average rate for GBR logical channels.
-      unsigned win_size_msec = ch_cfg->qos.value().qos.average_window_ms.value();
-      channels[ch_cfg->lcid].avg_bytes_per_slot.resize(win_size_msec * slots_per_sec / 1000);
+      // Check both gbr_qos_info and runtime_qos.res_type to handle cases where
+      // runtime_qos.res_type is GBR but gbr_qos_info is not set.
+      bool is_gbr_flow = false;
+      unsigned win_size_msec = 2000; // Default 2000ms if not specified
+      
+      if (ch_cfg->qos.value().gbr_qos_info.has_value()) {
+        // Original GBR flow with gbr_qos_info
+        is_gbr_flow = true;
+        if (ch_cfg->qos.value().qos.average_window_ms.has_value()) {
+          win_size_msec = ch_cfg->qos.value().qos.average_window_ms.value();
+        }
+      } else if (ch_cfg->qos.value().runtime_qos.res_type == qos_flow_resource_type::gbr ||
+                 ch_cfg->qos.value().runtime_qos.res_type == qos_flow_resource_type::delay_critical_gbr) {
+        // Runtime QoS indicates GBR flow but gbr_qos_info is not set
+        is_gbr_flow = true;
+        if (ch_cfg->qos.value().qos.average_window_ms.has_value()) {
+          win_size_msec = ch_cfg->qos.value().qos.average_window_ms.value();
+        }
+      }
+      
+      if (is_gbr_flow) {
+        channels[ch_cfg->lcid].avg_bytes_per_slot.resize(win_size_msec * slots_per_sec / 1000);
+      }
     }
     // buffer state stays the same when configuration is updated.
   }
@@ -536,4 +588,5 @@ unsigned srsran::build_dl_transport_block_info(dl_msg_tb_info&             tb_in
   }
   return total_subpdu_bytes;
 }
+
 

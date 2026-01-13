@@ -189,7 +189,7 @@ static double compute_dl_qos_weights(const slice_ue&                  u,
         min_combined_prio = std::min(combined_prio, min_combined_prio);
         
         static unsigned log_counter = 0;
-        if ((log_counter++ % 1000) == 0) {  // 1000번마다 로그
+        if ((log_counter++ % 100) == 0) {  // 100번마다 로그
           static srslog::basic_logger& logger = srslog::fetch_basic_logger("SCHED");
           logger.info("[STEP7-SCHED] Priority 계산 - UE{} LCID{} QoS_Prio={} ARP_Prio={} Combined={} min_combined_prio={}",
                        u.ue_index(), static_cast<unsigned>(lc->lcid),
@@ -208,7 +208,7 @@ static double compute_dl_qos_weights(const slice_ue&                  u,
         
         // Log delay_weight calculation details (periodically)
         static unsigned delay_log_counter = 0;
-        if ((delay_log_counter++ % 1000) == 0) {
+        if ((delay_log_counter++ % 100) == 0) {
           static srslog::basic_logger& logger = srslog::fetch_basic_logger("SCHED");
           logger.info("[DELAY-WEIGHT] UE{} LCID{} hol_toa={} slot_tx={} hol_delay_ms={} PDB={}ms delay_contrib={:.3f} delay_weight={:.3f}",
                       u.ue_index(),
@@ -223,7 +223,7 @@ static double compute_dl_qos_weights(const slice_ue&                  u,
       } else {
         // Log when hol_toa is invalid or condition not met (periodically)
         static unsigned hol_toa_log_counter = 0;
-        if ((hol_toa_log_counter++ % 1000) == 0) {
+        if ((hol_toa_log_counter++ % 100) == 0) {
           static srslog::basic_logger& logger = srslog::fetch_basic_logger("SCHED");
           logger.info("[DELAY-WEIGHT] UE{} LCID{} hol_toa_valid={} hol_toa={} slot_tx={} (condition not met, delay_weight not updated)",
                       u.ue_index(),
@@ -237,29 +237,65 @@ static double compute_dl_qos_weights(const slice_ue&                  u,
       // Check resource type first - if GBR or Delay Critical GBR, calculate gbr_weight even without runtime_gbr_qos_info
       if (lc->qos->runtime_qos.res_type == qos_flow_resource_type::gbr ||
           lc->qos->runtime_qos.res_type == qos_flow_resource_type::delay_critical_gbr) {
-        // GBR flow: Set gbr_dl based on resource type
+        // GBR flow: Set gbr_dl based on resource type (convert Mbps to bps)
         double gbr_dl = 0.0;
         if (lc->qos->runtime_qos.res_type == qos_flow_resource_type::gbr) {
-          // GBR flow: 5 Mbps
-          gbr_dl = 5.0;
+          // GBR flow: 5 Mbps = 5,000,000 bps
+          gbr_dl = 5.0 * 1e6;
         } else if (lc->qos->runtime_qos.res_type == qos_flow_resource_type::delay_critical_gbr) {
-          // Delay Critical GBR flow: 20 Mbps
-          gbr_dl = 20.0;
+          // Delay Critical GBR flow: 20 Mbps = 20,000,000 bps
+          gbr_dl = 20.0 * 1e6;
         }
 
         double dl_avg_rate = u.dl_avg_bit_rate(lc->lcid);
+        
+        // Debug logging for dl_avg_rate = 0 issue
+        static unsigned gbr_debug_log_counter = 0;
+        if ((gbr_debug_log_counter++ % 100) == 0) {
+          static srslog::basic_logger& logger = srslog::fetch_basic_logger("SCHED");
+          logger.info("[GBR-DEBUG] UE{} LCID{} res_type={} gbr_dl={} dl_avg_rate={:.3f} gbr_weight_before={:.3f}",
+                      u.ue_index(), static_cast<unsigned>(lc->lcid),
+                      lc->qos->runtime_qos.res_type == qos_flow_resource_type::gbr ? "GBR" : "DelayCriticalGBR",
+                      gbr_dl, dl_avg_rate, gbr_weight);
+        }
+        
         if (dl_avg_rate != 0) {
           gbr_weight += std::min(gbr_dl / dl_avg_rate, max_metric_weight);
         } else {
+          // dl_avg_rate = 0인 경우 상세 로그
+          static unsigned gbr_zero_log_counter = 0;
+          if ((gbr_zero_log_counter++ % 100) == 0) {
+            static srslog::basic_logger& logger = srslog::fetch_basic_logger("SCHED");
+            logger.warning("[GBR-ZERO] UE{} LCID{} dl_avg_rate=0! res_type={} gbr_dl={} max_metric_weight={:.0f} - avg_bytes_per_slot may not be initialized or no scheduling occurred",
+                          u.ue_index(), static_cast<unsigned>(lc->lcid),
+                          lc->qos->runtime_qos.res_type == qos_flow_resource_type::gbr ? "GBR" : "DelayCriticalGBR",
+                          gbr_dl, max_metric_weight);
+          }
           gbr_weight += max_metric_weight;
         }
       } else if (lc->qos->runtime_gbr_qos_info.has_value()) {
         // Non-GBR flow but has runtime_gbr_qos_info: Use original gbr_dl
         double gbr_dl = lc->qos->runtime_gbr_qos_info->gbr_dl;
         double dl_avg_rate = u.dl_avg_bit_rate(lc->lcid);
+        
+        // Debug logging for dl_avg_rate = 0 issue
+        static unsigned gbr_info_debug_log_counter = 0;
+        if ((gbr_info_debug_log_counter++ % 100) == 0) {
+          static srslog::basic_logger& logger = srslog::fetch_basic_logger("SCHED");
+          logger.info("[GBR-INFO-DEBUG] UE{} LCID{} gbr_dl={} dl_avg_rate={:.3f} gbr_weight_before={:.3f}",
+                      u.ue_index(), static_cast<unsigned>(lc->lcid), gbr_dl, dl_avg_rate, gbr_weight);
+        }
+        
         if (dl_avg_rate != 0) {
           gbr_weight += std::min(gbr_dl / dl_avg_rate, max_metric_weight);
         } else {
+          // dl_avg_rate = 0인 경우 상세 로그
+          static unsigned gbr_info_zero_log_counter = 0;
+          if ((gbr_info_zero_log_counter++ % 100) == 0) {
+            static srslog::basic_logger& logger = srslog::fetch_basic_logger("SCHED");
+            logger.warning("[GBR-INFO-ZERO] UE{} LCID{} dl_avg_rate=0! gbr_dl={} max_metric_weight={:.0f} - avg_bytes_per_slot may not be initialized or no scheduling occurred",
+                          u.ue_index(), static_cast<unsigned>(lc->lcid), gbr_dl, max_metric_weight);
+          }
           gbr_weight += max_metric_weight;
         }
       } else {
@@ -297,7 +333,7 @@ static double compute_dl_qos_weights(const slice_ue&                  u,
   
   // Log gbr_weight calculation details (periodically)
   static unsigned gbr_weight_log_counter = 0;
-  if ((gbr_weight_log_counter++ % 1000) == 0) {
+  if ((gbr_weight_log_counter++ % 100) == 0) {
     static srslog::basic_logger& logger = srslog::fetch_basic_logger("SCHED");
     logger.info("[GBR-WEIGHT] UE{} gbr_enabled={} gbr_weight_before={:.3f} gbr_weight_after={:.3f} (reason: {})",
                 u.ue_index(),
@@ -313,7 +349,7 @@ static double compute_dl_qos_weights(const slice_ue&                  u,
   
   // Log delay_weight final value and reason (periodically)
   static unsigned delay_final_log_counter = 0;
-  if ((delay_final_log_counter++ % 1000) == 0) {
+  if ((delay_final_log_counter++ % 100) == 0) {
     static srslog::basic_logger& logger = srslog::fetch_basic_logger("SCHED");
     logger.info("[DELAY-WEIGHT-FINAL] UE{} delay_weight_before={:.3f} pdb_enabled={} delay_weight_after={:.3f} (reason: {})",
                 u.ue_index(),
@@ -337,7 +373,7 @@ static double compute_dl_qos_weights(const slice_ue&                  u,
                                                       : 1.0;
   
   static unsigned prio_log_counter = 0;
-  if (policy_params.priority_enabled && (prio_log_counter++ % 1000) == 0) {
+  if (policy_params.priority_enabled && (prio_log_counter++ % 100) == 0) {
     static srslog::basic_logger& logger = srslog::fetch_basic_logger("SCHED");
     logger.debug("[STEP8-SCHED] prio_weight 계산 - UE{} min_combined_prio={} prio_weight={:.3f}",
                  u.ue_index(), min_combined_prio, prio_weight);
@@ -345,7 +381,7 @@ static double compute_dl_qos_weights(const slice_ue&                  u,
 
   // Log priority calculation details (periodically to avoid log spam)
   static unsigned log_counter = 0;
-  if ((log_counter++ % 1000) == 0) {  // Log every 1000th call
+  if ((log_counter++ % 100) == 0) {  // Log every 100th call
     static srslog::basic_logger& logger = srslog::fetch_basic_logger("SCHED");
     logger.info("DL Priority calc: UE{} min_combined_prio={}, prio_weight={:.3f}, pf_weight={:.3f}, gbr_weight={:.3f}, delay_weight={:.3f}",
                 u.ue_index(),
@@ -357,7 +393,7 @@ static double compute_dl_qos_weights(const slice_ue&                  u,
     
     // Log PDB and GBR values used in scheduling (업데이트된 runtime_qos 값 사용)
     static unsigned qos_log_counter = 0;
-    if ((qos_log_counter++ % 1000) == 0) {
+    if ((qos_log_counter++ % 100) == 0) {
       for (logical_channel_config_ptr lc : *u.logical_channels()) {
         if (not u.contains(lc->lcid) or not lc->qos.has_value() or u.pending_dl_newtx_bytes(lc->lcid) == 0) {
           continue;
@@ -388,7 +424,7 @@ static double compute_dl_qos_weights(const slice_ue&                  u,
   
   // Log final priority (periodically)
   static unsigned final_log_counter = 0;
-  if ((final_log_counter++ % 1000) == 0) {
+  if ((final_log_counter++ % 100) == 0) {
     static srslog::basic_logger& logger = srslog::fetch_basic_logger("SCHED");
     logger.info("DL Final Priority: UE{} final_priority={:.3f} (min_combined_prio={})",
                 u.ue_index(),
@@ -431,14 +467,14 @@ static double compute_ul_qos_weights(const slice_ue&                  u,
       // Check resource type first - if GBR or Delay Critical GBR, calculate gbr_weight even without runtime_gbr_qos_info
       if (lc->qos->runtime_qos.res_type == qos_flow_resource_type::gbr ||
           lc->qos->runtime_qos.res_type == qos_flow_resource_type::delay_critical_gbr) {
-        // GBR flow: Set gbr_ul based on resource type
+        // GBR flow: Set gbr_ul based on resource type (convert Mbps to bps)
         double gbr_ul = 0.0;
         if (lc->qos->runtime_qos.res_type == qos_flow_resource_type::gbr) {
-          // GBR flow: 5 Mbps
-          gbr_ul = 5.0;
+          // GBR flow: 5 Mbps = 5,000,000 bps
+          gbr_ul = 5.0 * 1e6;
         } else if (lc->qos->runtime_qos.res_type == qos_flow_resource_type::delay_critical_gbr) {
-          // Delay Critical GBR flow: 20 Mbps
-          gbr_ul = 20.0;
+          // Delay Critical GBR flow: 20 Mbps = 20,000,000 bps
+          gbr_ul = 20.0 * 1e6;
         }
 
         lcg_id_t lcg_id = u.get_lcg_id(lc->lcid);
@@ -520,31 +556,21 @@ void scheduler_time_qos::ue_ctxt::apply_5qi_based_runtime_overrides(const slice_
     std::optional<uint8_t> ue_dscp = mapper.get_dscp_for_ue(static_cast<uint32_t>(ue_index));
     
     if (ue_dscp.has_value()) {
-      logger.debug("[STEP6-SCHED] DSCP 조회 - UE{} LCID{} 원본 5QI={} DSCP={}",
-                   ue_index, static_cast<unsigned>(lc->lcid), lc->qos->five_qi, ue_dscp.value());
+      // DSCP lookup logging removed to reduce log spam
       
       // Try to get DSCP-based 5QI mapping
       std::optional<five_qi_t> dscp_mapped_5qi = mapper.map_dscp_to_5qi(ue_dscp.value());
       if (dscp_mapped_5qi.has_value()) {
         effective_5qi = dscp_mapped_5qi.value();
-        logger.info("[STEP6-SCHED] DSCP→5QI 매핑 적용 - UE{} LCID{} DSCP={} -> 5QI={} (원본 5QI={}에서 변경)",
-                    ue_index, static_cast<unsigned>(lc->lcid), ue_dscp.value(), effective_5qi, lc->qos->five_qi);
+        // DSCP mapping logging removed to reduce log spam
       } else {
         // Try standard mapping
         std::optional<five_qi_t> std_mapped_5qi = mapper.map_dscp_to_5qi_using_standard_mapping(ue_dscp.value());
         if (std_mapped_5qi.has_value()) {
           effective_5qi = std_mapped_5qi.value();
-          if (effective_5qi != lc->qos->five_qi) {
-            logger.info("[STEP6-SCHED] 표준 매핑 적용 - UE{} LCID{} DSCP={} -> 5QI={} (원본 5QI={}에서 변경)",
-                        ue_index, static_cast<unsigned>(lc->lcid), ue_dscp.value(), effective_5qi, lc->qos->five_qi);
-          } else {
-            logger.debug("[STEP6-SCHED] 표준 매핑 적용 (원본과 동일) - UE{} LCID{} DSCP={} -> 5QI={}",
-                        ue_index, static_cast<unsigned>(lc->lcid), ue_dscp.value(), effective_5qi);
-          }
-        } else {
-          logger.warning("[STEP6-SCHED] DSCP→5QI 매핑 실패 - UE{} LCID{} DSCP={} (명시적 매핑 및 표준 매핑 모두 실패, 원본 5QI={} 유지)",
-                        ue_index, static_cast<unsigned>(lc->lcid), ue_dscp.value(), lc->qos->five_qi);
+          // Standard mapping logging removed to reduce log spam
         }
+        // Mapping failure logging removed to reduce log spam
       }
     }
 
@@ -591,7 +617,7 @@ void scheduler_time_qos::ue_ctxt::apply_5qi_based_runtime_overrides(const slice_
                                    old_res_type_str;
     static unsigned step6_update_log_counter = 0;
     if (effective_5qi != lc->qos->five_qi) {
-      if ((step6_update_log_counter++ % 1000) == 0) {
+      if ((step6_update_log_counter++ % 100) == 0) {
         logger.info("[STEP6-SCHED] QoS 업데이트 (DSCP 기반) - UE{} LCID{} 5QI={}->{} Priority={}->{} PDB={}->{}ms Type={}->{} (ARP={})",
                     ue_index,
                     static_cast<unsigned>(lc->lcid),
@@ -621,7 +647,7 @@ void scheduler_time_qos::ue_ctxt::apply_5qi_based_runtime_overrides(const slice_
     
     // Log PDB and GBR information for traffic monitoring (업데이트된 값 사용)
     static unsigned pdb_gbr_log_counter = 0;
-    if ((pdb_gbr_log_counter++ % 1000) == 0) {  // Log every 1000th call
+    if ((pdb_gbr_log_counter++ % 100) == 0) {  // Log every 100th call
       // 업데이트된 runtime_qos 값 사용
       const auto& updated_runtime_qos = lc->qos->runtime_qos;
       if (lc->qos->runtime_gbr_qos_info.has_value()) {
