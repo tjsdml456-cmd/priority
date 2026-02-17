@@ -220,8 +220,8 @@ static double compute_dl_qos_weights(const slice_ue&                  u,
           // GBR flow: 10 Mbps = 10,000,000 bps
           gbr_dl = 10.0 * 1e6;
         } else if (lc->qos->runtime_qos.res_type == qos_flow_resource_type::delay_critical_gbr) {
-          // Delay Critical GBR flow: 15 Mbps = 15,000,000 bps
-          gbr_dl = 15.0 * 1e6;
+          // Delay Critical GBR flow: 20 Mbps = 20,000,000 bps
+          gbr_dl = 20.0 * 1e6;
         }
 
         double dl_avg_rate = u.dl_avg_bit_rate(lc->lcid);
@@ -370,8 +370,8 @@ static double compute_ul_qos_weights(const slice_ue&                  u,
           // GBR flow: 10 Mbps = 10,000,000 bps
           gbr_ul = 10.0 * 1e6;
         } else if (lc->qos->runtime_qos.res_type == qos_flow_resource_type::delay_critical_gbr) {
-          // Delay Critical GBR flow: 15 Mbps = 15,000,000 bps
-          gbr_ul = 18.0 * 1e6;
+          // Delay Critical GBR flow: 20 Mbps = 20,000,000 bps
+          gbr_ul = 20.0 * 1e6;
         }
 
         lcg_id_t lcg_id = u.get_lcg_id(lc->lcid);
