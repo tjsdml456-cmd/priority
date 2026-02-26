@@ -21,6 +21,7 @@
  */
 
 #include "f1u_bearer_impl.h"
+#include <chrono>
 
 using namespace srsran;
 using namespace srs_du;
@@ -64,6 +65,14 @@ f1u_bearer_impl::f1u_bearer_impl(uint32_t                       ue_index,
 
 void f1u_bearer_impl::handle_sdu(byte_buffer_chain sdu)
 {
+  if (!first_ul_traffic_logged) {
+    first_ul_traffic_logged = true;
+    auto now = std::chrono::system_clock::now();
+    auto ms  = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+    logger.log_info("[FIRST-UL-TRAFFIC] UE DRB first uplink user data received (e.g. iperf3). size={} bytes, timestamp_ms={}",
+                    sdu.length(),
+                    ms);
+  }
   logger.log_debug("F1-U bearer received SDU with size={}", sdu.length());
   nru_ul_message msg = {};
 
@@ -113,6 +122,14 @@ void f1u_bearer_impl::handle_pdu_impl(nru_dl_message msg)
   logger.log_debug("F1-U bearer received PDU");
   // handle T-PDU
   if (!msg.t_pdu.empty()) {
+    if (!first_dl_traffic_logged) {
+      first_dl_traffic_logged = true;
+      auto now = std::chrono::system_clock::now();
+      auto ms  = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+      logger.log_info("[FIRST-DL-TRAFFIC] UE DRB first downlink user data received (e.g. iperf3). size={} bytes, timestamp_ms={}",
+                      msg.t_pdu.length(),
+                      ms);
+    }
     logger.log_debug("Delivering T-PDU. size={}", msg.t_pdu.length());
     rx_sdu_notifier.on_new_sdu(std::move(msg.t_pdu), msg.dl_user_data.retransmission_flag);
   }
@@ -307,3 +324,4 @@ void f1u_bearer_impl::on_expired_ul_notif_timer()
     logger.log_debug("UL notification timer expired. No fresh data to be sent in data delivery status");
   }
 }
+

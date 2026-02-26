@@ -70,6 +70,10 @@ private:
   f1u_bearer_logger logger;
   bool              stopped = false;
 
+  /// Flags to log first DL/UL user traffic arrival (e.g. iperf3 start) once per bearer.
+  bool first_dl_traffic_logged = false;
+  bool first_ul_traffic_logged = false;
+  
   /// Config storage
   const f1u_config              cfg;
   const up_transport_layer_info dl_tnl_info;

@@ -174,7 +174,7 @@ private:
   static const std::map<uint8_t, five_qi_t>& get_dscp_to_5qi_mapping_table()
   {
     static const std::map<uint8_t, five_qi_t> mapping_table = {
-      {44, uint_to_five_qi(1)},   // GBR, Priority=20
+      {44, uint_to_five_qi(66)},  // GBR, Priority=20 (DSCP 44 → 5QI 66; 5QI 1 also has prio 20, single entry)
       {34, uint_to_five_qi(2)},   // GBR, Priority=40
       {32, uint_to_five_qi(3)},   // GBR, Priority=30
       {28, uint_to_five_qi(4)},   // GBR, Priority=50
@@ -182,7 +182,6 @@ private:
       {26, uint_to_five_qi(6)},   // non-GBR, Priority=60
       {22, uint_to_five_qi(7)},   // non-GBR, Priority=70
       {0, uint_to_five_qi(9)},    // non-GBR, Priority=90
-      {44, uint_to_five_qi(66)},  // GBR, Priority=20
       {38, uint_to_five_qi(67)},  // GBR, Priority=15
       {30, uint_to_five_qi(70)},  // non-GBR, Priority=55
       {32, uint_to_five_qi(79)},  // non-GBR, Priority=65
@@ -201,5 +200,6 @@ private:
 };
 
 } // namespace srsran
+
 
 

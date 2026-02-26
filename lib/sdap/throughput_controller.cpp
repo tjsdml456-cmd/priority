@@ -264,8 +264,14 @@ std::optional<uint8_t> throughput_controller::get_target_priority(du_ue_index_t 
 
 uint8_t throughput_controller::compute_dscp_adjustment(pid_state& state, double current_mbps, double target_mbps)
 {
-  // Calculate error (target - current)
-  state.error = target_mbps - current_mbps;
+  // Calculate error as a **minimum throughput** gap, not a strict target.
+  // - If current < target  -> positive error  -> try to increase throughput.
+  // - If current >= target -> error = 0      -> do NOT try to reduce throughput.
+  //
+  // This allows small configured bitrates (e.g. 1 Mbps) to still be reached,
+  // while also allowing the traffic to grow above the target without being
+  // artificially throttled by lowering the priority.
+  state.error = std::max(0.0, target_mbps - current_mbps);
   
   // Proportional term
   double p_term = cfg.kp * state.error;
@@ -425,5 +431,6 @@ uint8_t throughput_controller::clamp_dscp(uint8_t dscp) const
 {
   return std::clamp(dscp, cfg.min_dscp, cfg.max_dscp);
 }
+
 
 
