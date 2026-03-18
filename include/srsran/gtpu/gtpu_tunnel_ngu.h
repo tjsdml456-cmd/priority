@@ -40,9 +40,11 @@ public:
   gtpu_tunnel_ngu(const gtpu_tunnel_ngu&&)            = delete;
   gtpu_tunnel_ngu& operator=(const gtpu_tunnel_ngu&&) = delete;
 
-  virtual void                                         stop()                         = 0;
-  virtual gtpu_tunnel_common_rx_upper_layer_interface* get_rx_upper_layer_interface() = 0;
-  virtual gtpu_tunnel_ngu_tx_lower_layer_interface*    get_tx_lower_layer_interface() = 0;
+  virtual void                                         stop()                                   = 0;
+  virtual gtpu_tunnel_common_rx_upper_layer_interface* get_rx_upper_layer_interface()             = 0;
+  virtual gtpu_tunnel_ngu_tx_lower_layer_interface*    get_tx_lower_layer_interface()            = 0;
+  virtual void                                         reset_first_packet_logged_after_qos_change() = 0;
 };
 
 } // namespace srsran
+
