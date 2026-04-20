@@ -1006,7 +1006,7 @@ struct du_high_unit_metrics_layer_config {
 /// Metrics report configuration.
 struct du_high_unit_metrics_config {
   /// Scheduler report period in milliseconds.
-  unsigned                          du_report_period         = 1000;
+  unsigned                          du_report_period         = 200;
   bool                              autostart_stdout_metrics = false;
   app_helpers::metrics_config       common_metrics_cfg;
   du_high_unit_metrics_layer_config layers_cfg;
