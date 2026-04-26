@@ -51,6 +51,9 @@ private:
 } // namespace
 
 static null_metrics_notifier null_notifier;
+// Force scheduler metric report period for throughput logs.
+// This controls the actual aggregation window (sum_*_tb_bytes and period_ms).
+static constexpr unsigned FORCED_METRIC_REPORT_PERIOD_MS = 10;
 
 cell_metrics_handler::cell_metrics_handler(
     const cell_configuration&                                                      cell_cfg_,
@@ -599,7 +602,13 @@ void cell_metrics_handler::push_result(slot_point                sl_tx,
 
   handle_slot_result(sl_tx, slot_result, slot_decision_latency);
 
-  if (notifier.is_sched_report_required(sl_tx)) {
+  // Report every fixed 10ms window so throughput logs use true 10ms aggregation.
+  // nof_slots_per_sf = slots per 1ms (depends on SCS), so 10ms corresponds to:
+  // slots_per_forced_report = FORCED_METRIC_REPORT_PERIOD_MS * nof_slots_per_sf.
+  const unsigned slots_per_forced_report = FORCED_METRIC_REPORT_PERIOD_MS * nof_slots_per_sf;
+  const bool     forced_report_due       = slots_per_forced_report > 0 && data.nof_slots >= slots_per_forced_report;
+
+  if (forced_report_due || notifier.is_sched_report_required(sl_tx)) {
     // Prepare report and forward it to the notifier.
     report_metrics();
   }
@@ -724,4 +733,5 @@ void scheduler_metrics_handler::rem_cell(du_cell_index_t cell_index)
 {
   cells.erase(cell_index);
 }
+
 
