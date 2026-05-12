@@ -74,7 +74,13 @@ public:
   /// Get DSCP value for a specific DRB
   std::optional<uint8_t> get_dscp_for_drb(drb_id_t drb_id) const override  
   {
-    // Find QFI mapped to this DRB
+    auto rx_it = rx_map.find(drb_id);
+    if (rx_it != rx_map.end()) {
+      const std::optional<uint8_t> ul_dscp = rx_it->second->get_last_dscp();
+      if (ul_dscp.has_value()) {
+        return ul_dscp;
+      }
+    }
     for (const auto& [qfi, tx_impl] : tx_map) {
       if (tx_impl->get_drb_id() == drb_id) {
         return tx_impl->get_last_dscp();
@@ -140,3 +146,4 @@ private:
 } // namespace srs_cu_up
 
 } // namespace srsran
+

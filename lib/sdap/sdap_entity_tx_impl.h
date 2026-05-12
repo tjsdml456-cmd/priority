@@ -23,43 +23,15 @@
 #pragma once
 
 #include "srsran/sdap/dscp_qos_mapper.h"
+#include "srsran/sdap/sdap_ipv4_dscp_extract.h"
 #include "sdap_session_logger.h"
 #include "srsran/ran/qos/five_qi.h"
 #include "srsran/sdap/sdap.h"
 #include <optional>
-#include <map>
 
 namespace srsran {
 
 namespace srs_cu_up {
-
-/// Extract DSCP value from IPv4 header
-/// Returns DSCP value (6 bits) if valid IPv4 packet, otherwise returns empty
-static std::optional<uint8_t> extract_dscp_from_ipv4(byte_buffer_view sdu)
-{
-  if (sdu.empty()) {
-    return {};
-  }
-
-  // Check minimum IPv4 header length (20 bytes)
-  if (sdu.length() < 20) {
-    return {};
-  }
-
-  // Check IP version (first 4 bits should be 0x4 for IPv4)
-  uint8_t version_ihl = sdu[0];
-  if ((version_ihl >> 4) != 4) {
-    return {};
-  }
-
-  // Extract DSCP from ToS field (bits 0-5 of byte 1)
-  // IPv4 header: [Version(4) IHL(4)] [ToS(8)] ...
-  // ToS: [DSCP(6) ECN(2)]
-  uint8_t tos = sdu[1];
-  uint8_t dscp = (tos >> 2) & 0x3F; // Extract upper 6 bits
-
-  return dscp;
-}
 
 // DSCP to 5QI mapping is now handled by dscp_qos_mapper class
 // This allows dynamic mapping based on actual DSCP values extracted from IP packets
@@ -162,5 +134,6 @@ private:
 } // namespace srs_cu_up
 
 } // namespace srsran
+
 
 

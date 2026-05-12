@@ -21,10 +21,36 @@
  */
 
 #include "ul_logical_channel_manager.h"
+#include <algorithm>
 
 using namespace srsran;
 
-// Initial capacity for the slice_lcid_list_lookup vector.
+namespace {
+
+/// Whether UL average-rate tracking should be enabled for this QoS bearer, mirroring DL logical channel policy.
+bool is_gbr_ul_rate_tracking_enabled(const logical_channel_config::qos_info& q, unsigned& win_size_msec)
+{
+  win_size_msec = 2000U;
+  const bool is_gbr = q.gbr_qos_info.has_value() ||
+                      q.runtime_qos.res_type == qos_flow_resource_type::gbr ||
+                      q.runtime_qos.res_type == qos_flow_resource_type::delay_critical_gbr;
+  if (not is_gbr) {
+    return false;
+  }
+  if (q.qos.average_window_ms.has_value()) {
+    win_size_msec = q.qos.average_window_ms.value();
+  }
+  return true;
+}
+
+unsigned ul_avg_rate_window_slots(unsigned win_msec, unsigned slots_per_sec)
+{
+  return std::max(1U, win_msec * slots_per_sec / 1000);
+}
+
+} // namespace
+
+// Initial capacity for the slice_lcgid_list_lookup vector.
 static constexpr unsigned INITIAL_SLICE_CAPACITY = 4;
 
 ul_logical_channel_manager::ul_logical_channel_manager(subcarrier_spacing              scs,
@@ -81,6 +107,18 @@ void ul_logical_channel_manager::deregister_ran_slice(ran_slice_id_t slice_id)
 
 void ul_logical_channel_manager::slot_indication()
 {
+  // Lazily size avg_bytes_per_slot when runtime_qos becomes GBR after configure() (e.g. DSCP→5QI overrides), same idea
+  // as dl_logical_channel_manager::slot_indication().
+  for (const auto& ch : *lc_channels_configs) {
+    auto& group = groups[ch->lc_group];
+    if (group.avg_bytes_per_slot.size() == 0 and ch->qos.has_value()) {
+      unsigned win_msec = 2000U;
+      if (is_gbr_ul_rate_tracking_enabled(ch->qos.value(), win_msec)) {
+        group.avg_bytes_per_slot.resize(ul_avg_rate_window_slots(win_msec, slots_per_sec));
+      }
+    }
+  }
+
   // Update the bit rates of the UE logical channel groups with tracked bit rates.
   for (const auto& ch : *lc_channels_configs) {
     auto& group = groups[ch->lc_group];
@@ -105,11 +143,11 @@ void ul_logical_channel_manager::configure(logical_channel_config_list_ptr lc_ch
   }
   for (logical_channel_config_ptr lc_ch : *lc_channels_configs) {
     groups[lc_ch->lc_group].active = true;
-    if (lc_ch->qos.has_value() and lc_ch->qos.value().gbr_qos_info.has_value()) {
-      // Track average rate for GBR logical channel groups.
-      // Note: average window size must be set for GBR QoS Flows.
-      unsigned win_size_msec = lc_ch->qos.value().qos.average_window_ms.value();
-      groups[lc_ch->lc_group].avg_bytes_per_slot.resize(win_size_msec * slots_per_sec / 1000);
+    if (lc_ch->qos.has_value()) {
+      unsigned win_msec = 2000U;
+      if (is_gbr_ul_rate_tracking_enabled(lc_ch->qos.value(), win_msec)) {
+        groups[lc_ch->lc_group].avg_bytes_per_slot.resize(ul_avg_rate_window_slots(win_msec, slots_per_sec));
+      }
     }
   }
   for (unsigned i = 0; i != groups.size(); ++i) {
@@ -167,3 +205,4 @@ void ul_logical_channel_manager::handle_ul_grant(unsigned grant_size)
     }
   }
 }
+

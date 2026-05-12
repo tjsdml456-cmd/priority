@@ -338,10 +338,49 @@ static double compute_ul_qos_weights(const slice_ue&                  u,
                                      double                           avg_ul_rate,
                                      const time_qos_scheduler_config& policy_params)
 {
+  static srslog::basic_logger& logger = srslog::fetch_basic_logger("SCHED");
+
   if (u.has_pending_sr() or avg_ul_rate == 0) {
+    logger.info("[UL-SR-BOOST] UE{} has_pending_sr={} avg_ul_rate={:.2f} estim_ul_rate={:.2f} -> prio=max",
+                u.ue_index(),
+                u.has_pending_sr(),
+                avg_ul_rate,
+                estim_ul_rate);
     // Highest priority to SRs and UEs that have not yet received any allocation.
     return max_sched_priority;
   }
+
+  // BSR/backlog-based queuing proxy (same formula as legacy time_qos debug; delay_weight still 1.0 for UL combine).
+  double   ul_queue_delay_ms_sum  = 0;
+  uint64_t total_pending_ul_bytes = 0;
+  for (logical_channel_config_ptr lc : *u.logical_channels()) {
+    if (not u.contains(lc->lcid) or not lc->qos.has_value()) {
+      continue;
+    }
+    const lcg_id_t lcg_id         = u.get_lcg_id(lc->lcid);
+    const uint32_t pending_bytes  = u.pending_ul_unacked_bytes(lc->lc_group);
+    const double   ul_rate_lcg    = u.ul_avg_bit_rate(lcg_id);
+    total_pending_ul_bytes += pending_bytes;
+    if (pending_bytes > 0) {
+      double queue_delay_ms = 0.0;
+      if (ul_rate_lcg > 0.0) {
+        queue_delay_ms = (static_cast<double>(pending_bytes) * 8.0 * 1000.0) / ul_rate_lcg;
+        ul_queue_delay_ms_sum += queue_delay_ms;
+      }
+      logger.info(
+          "[UL-BSR-SNAPSHOT] UE{} LCID{} LCG{} pending_ul_unacked_bytes={} ul_avg_rate={:.2f} queue_delay_ms={:.3f}",
+          u.ue_index(),
+          static_cast<unsigned>(lc->lcid),
+          static_cast<unsigned>(lcg_id),
+          pending_bytes,
+          ul_rate_lcg,
+          queue_delay_ms);
+    }
+  }
+  logger.info("[UL-DELAY-WEIGHT] UE{} total_pending_ul_unacked_bytes={} ul_queue_delay_ms_sum={:.3f}",
+              u.ue_index(),
+              total_pending_ul_bytes,
+              ul_queue_delay_ms_sum);
 
   static constexpr uint16_t max_combined_prio_level = qos_prio_level_t::max() * arp_prio_level_t::max();
   uint16_t                  min_combined_prio       = max_combined_prio_level;
@@ -420,6 +459,20 @@ static double compute_ul_qos_weights(const slice_ue&                  u,
                                                             static_cast<double>(max_combined_prio_level + 1)
                                                       : 1.0;
   double pf_weight   = compute_pf_metric(estim_ul_rate, avg_ul_rate, policy_params.pf_fairness_coeff);
+
+  auto&                    mapper        = dscp_qos_mapper::get_instance();
+  const std::optional<uint8_t> mapper_dscp = mapper.get_dscp_for_ue(static_cast<uint32_t>(u.ue_index()));
+
+  logger.info("UL Priority calc: UE{} prio_weight={:.3f} pf_weight={:.3f} gbr_weight={:.3f} delay_weight=1.0 "
+              "estim_ul_rate={:.2f} avg_ul_rate={:.2f} ul_queue_delay_ms_sum={:.3f} mapper_dscp={}",
+              u.ue_index(),
+              prio_weight,
+              pf_weight,
+              gbr_weight,
+              estim_ul_rate,
+              avg_ul_rate,
+              ul_queue_delay_ms_sum,
+              mapper_dscp.has_value() ? static_cast<int>(mapper_dscp.value()) : -1);
 
   return combine_qos_metrics(pf_weight, gbr_weight, prio_weight, 1.0, policy_params);
 }
@@ -718,6 +771,7 @@ void scheduler_time_qos::ue_ctxt::save_ul_alloc(unsigned alloc_bytes)
   }
   ul_sum_alloc_bytes += alloc_bytes;
 }
+
 
 
 

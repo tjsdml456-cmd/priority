@@ -6,8 +6,8 @@
  *
  * srsRAN is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
- * published by the Free Software Foundation, either version 3 of
- * the License, or (at your option) any later version.
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
  *
  * srsRAN is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -32,8 +32,6 @@
 #include <array>
 #include <chrono>
 #include <optional>
-#include <arpa/inet.h>
-#include <netinet/in.h>
 
 namespace srsran {
 
@@ -83,20 +81,28 @@ public:
     const auto t_us = std::chrono::duration_cast<std::chrono::microseconds>(
                           std::chrono::steady_clock::now().time_since_epoch())
                           .count();
-    // Extract DSCP from inner SDU before GTP-U header is prepended.
+
+    // Log-only here: inner IPv4 DSCP for grepping / scripts. DU path uses SDAP RX + dscp_qos_mapper (DL uses SDAP TX).
     std::optional<uint8_t> inner_dscp = gtpu_extract_dscp_from_ipv4_ul(byte_buffer_view(buf));
     if (inner_dscp.has_value()) {
       const unsigned qfi_val = static_cast<unsigned>(qfi);
       if (qfi_val < last_dscp_per_qfi.size() &&
           (!last_dscp_per_qfi[qfi_val].has_value() || last_dscp_per_qfi[qfi_val].value() != inner_dscp.value())) {
+        const int prev =
+            last_dscp_per_qfi[qfi_val].has_value() ? static_cast<int>(last_dscp_per_qfi[qfi_val].value()) : -1;
+        logger.log_info("ue={}: [GTPU] UL SDU DSCP changed to {} (IPv4 ToS) QFI={} sdu_len={} previous_dscp={}",
+                        static_cast<unsigned>(ue_index),
+                        inner_dscp.value(),
+                        qfi,
+                        buf.length(),
+                        prev);
         logger.log_info("[GTPU][UL] t_us={} ue={} DSCP changed to {} (inner IPv4 ToS) qfi={} sdu_len={} prev_dscp={}",
                         t_us,
                         static_cast<unsigned>(ue_index),
                         inner_dscp.value(),
                         qfi,
                         buf.length(),
-                        last_dscp_per_qfi[qfi_val].has_value() ? static_cast<int>(last_dscp_per_qfi[qfi_val].value())
-                                                               : -1);
+                        prev);
         last_dscp_per_qfi[qfi_val] = inner_dscp.value();
       }
     }
@@ -153,7 +159,7 @@ private:
   sockaddr_storage                                        peer_sockaddr = {};
   bool                                                    stopped       = false;
 
-  static constexpr unsigned max_qfi = 64;
+  static constexpr unsigned                    max_qfi = 64;
   std::array<std::optional<uint8_t>, max_qfi> last_dscp_per_qfi = {};
 };
 } // namespace srsran
