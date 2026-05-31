@@ -32,6 +32,18 @@
 
 namespace srsran {
 
+/// GFBR/MFBR / scheduler rate targets per DSCP profile (GBR 20M, DC-GBR 15M, non-GBR 10M).
+struct dscp_qos_rate_target {
+  uint64_t gbr_bps = 0;
+  uint64_t mbr_bps = 0;
+};
+
+/// DSCP profile: 5QI mapping plus optional scheduler rate target.
+struct dscp_qos_profile {
+  five_qi_t                           five_qi;
+  std::optional<dscp_qos_rate_target> rates;
+};
+
 /// \brief Manages DSCP to 5QI mapping based on actual DSCP values extracted from IP packets
 /// This class allows dynamic mapping of DSCP values to 5QI without hardcoding specific values
 class dscp_qos_mapper
@@ -107,14 +119,11 @@ public:
       return; // Mapping already exists, don't overwrite
     }
 
-    // 공통 매핑 테이블 사용
-    const auto& mapping_table = get_dscp_to_5qi_mapping_table();
-    auto mapping_it = mapping_table.find(dscp);
-    if (mapping_it != mapping_table.end()) {    
-      five_qi_t selected_5qi = mapping_it->second;
-      // Verify the selected 5QI exists in standard mapping
-      const auto* qos_chars = get_5qi_to_qos_characteristics_mapping(selected_5qi);
-      if (qos_chars != nullptr) {
+    const auto& profile_table = get_dscp_qos_profile_table();
+    auto        profile_it    = profile_table.find(dscp);
+    if (profile_it != profile_table.end()) {
+      const five_qi_t selected_5qi = profile_it->second.five_qi;
+      if (get_5qi_to_qos_characteristics_mapping(selected_5qi) != nullptr) {
         dscp_to_5qi_map[dscp] = selected_5qi;
         return;
       }
@@ -136,19 +145,7 @@ public:
       return explicit_it->second;
     }
 
-    // 공통 매핑 테이블 사용
-    const auto& mapping_table = get_dscp_to_5qi_mapping_table();
-    auto mapping_it = mapping_table.find(dscp);
-    if (mapping_it != mapping_table.end()) {    
-      five_qi_t selected_5qi = mapping_it->second;
-      // Verify the selected 5QI exists in standard mapping
-      const auto* qos_chars = get_5qi_to_qos_characteristics_mapping(selected_5qi);
-      if (qos_chars != nullptr) {
-        return selected_5qi;
-      }
-    }
-
-    return {};
+    return resolve_dscp_to_5qi_locked(dscp);
   }
 
   /// \brief Get all registered DSCP values
@@ -162,41 +159,118 @@ public:
     return result;
   }
 
+  /// \brief Map DSCP to scheduler rate target from profile (GBR 20M / DC-GBR 15M / non-GBR 10M).
+  std::optional<dscp_qos_rate_target> map_dscp_to_qos_rates(uint8_t dscp) const
+  {
+    std::optional<dscp_qos_rate_target> explicit_rates;
+    std::optional<dscp_qos_profile>     profile;
+    {
+      std::lock_guard<std::mutex> lock(mutex);
+      auto explicit_rate_it = dscp_to_qos_rate_map.find(dscp);
+      if (explicit_rate_it != dscp_to_qos_rate_map.end()) {
+        explicit_rates = explicit_rate_it->second;
+      }
+      profile = resolve_dscp_profile_locked(dscp);
+    }
+    if (explicit_rates.has_value()) {
+      return explicit_rates;
+    }
+    if (not profile.has_value() or not profile->rates.has_value()) {
+      return {};
+    }
+    return profile->rates;
+  }
+
+  /// \brief GFBR/MFBR for the DSCP last observed on this UE (from SDAP / iperf3).
+  std::optional<dscp_qos_rate_target> get_qos_rates_for_ue(uint32_t ue_index) const
+  {
+    const std::optional<uint8_t> dscp = get_dscp_for_ue(ue_index);
+    if (not dscp.has_value()) {
+      return {};
+    }
+    return map_dscp_to_qos_rates(dscp.value());
+  }
+
+  /// \brief Override GFBR/MFBR for a DSCP value (runtime).
+  void set_dscp_to_qos_rate_mapping(uint8_t dscp, const dscp_qos_rate_target& rates)
+  {
+    std::lock_guard<std::mutex> lock(mutex);
+    dscp_to_qos_rate_map[dscp] = rates;
+  }
+
 private:
   dscp_qos_mapper()  = default;
   ~dscp_qos_mapper() = default;
   dscp_qos_mapper(const dscp_qos_mapper&) = delete;
   dscp_qos_mapper& operator=(const dscp_qos_mapper&) = delete;
 
-  /// \brief 공통 DSCP → 5QI 매핑 테이블 (모든 함수에서 공유)
-  /// five_qi_qos_mapping.cpp에 정의된 모든 5QI를 DSCP에 매핑
-  /// DSCP 값이 높을수록 더 높은 우선순위의 5QI (낮은 priority 값) 할당
-  static const std::map<uint8_t, five_qi_t>& get_dscp_to_5qi_mapping_table()
+  /// \brief DSCP profile table: GBR 20 Mbps, DC-GBR 15 Mbps, non-GBR 10 Mbps (token bucket + grant clamp).
+  static const std::map<uint8_t, dscp_qos_profile>& get_dscp_qos_profile_table()
   {
-    static const std::map<uint8_t, five_qi_t> mapping_table = {
-      {44, uint_to_five_qi(66)},  // GBR, Priority=20 (DSCP 44 → 5QI 66; 5QI 1 also has prio 20, single entry)
-      {34, uint_to_five_qi(2)},   // GBR, Priority=40
-      {32, uint_to_five_qi(3)},   // GBR, Priority=30
-      {28, uint_to_five_qi(4)},   // GBR, Priority=50
-      {40, uint_to_five_qi(5)},   // non-GBR, Priority=10
-      {26, uint_to_five_qi(6)},   // non-GBR, Priority=60
-      {22, uint_to_five_qi(7)},   // non-GBR, Priority=70
-      {0, uint_to_five_qi(9)},    // non-GBR, Priority=90
-      {38, uint_to_five_qi(67)},  // GBR, Priority=15
-      {30, uint_to_five_qi(70)},  // non-GBR, Priority=55
-      {32, uint_to_five_qi(79)},  // non-GBR, Priority=65
-      {24, uint_to_five_qi(80)},   // non-GBR, Priority=68    
-      {17, uint_to_five_qi(82)},  // Delay Critical GBR, Priority=19
-      {16, uint_to_five_qi(83)},  // Delay Critical GBR, Priority=22
-      {15, uint_to_five_qi(84)},  // Delay Critical GBR, Priority=24
-      {14, uint_to_five_qi(85)}   // Delay Critical GBR, Priority=21
+    static const dscp_qos_rate_target gbr_rates{20'000'000, 20'000'000};
+    static const dscp_qos_rate_target dc_gbr_rates{15'000'000, 15'000'000};
+    static const dscp_qos_rate_target non_gbr_rates{10'000'000, 10'000'000};
+
+    static const std::map<uint8_t, dscp_qos_profile> profile_table = {
+        // GBR — 20 Mbps (priority: lower value = higher scheduling priority, TS 23.501)
+        {44, {uint_to_five_qi(66), gbr_rates}}, // 5QI 66, priority=20
+        {34, {uint_to_five_qi(2), gbr_rates}},  // 5QI 2,  priority=40
+        {32, {uint_to_five_qi(3), gbr_rates}},  // 5QI 3,  priority=30
+        {28, {uint_to_five_qi(4), gbr_rates}},  // 5QI 4,  priority=50
+        {38, {uint_to_five_qi(67), gbr_rates}}, // 5QI 67, priority=15
+        // non-GBR — 10 Mbps (same token bucket path as GBR; 5QI Type stays non-GBR)
+        {40, {uint_to_five_qi(5), non_gbr_rates}},  // 5QI 5,  priority=10
+        {26, {uint_to_five_qi(6), non_gbr_rates}},  // 5QI 6,  priority=60
+        {22, {uint_to_five_qi(7), non_gbr_rates}},  // 5QI 7,  priority=70
+        {0, {uint_to_five_qi(9), non_gbr_rates}},   // 5QI 9,  priority=90
+        {30, {uint_to_five_qi(70), non_gbr_rates}}, // 5QI 70, priority=55
+        {24, {uint_to_five_qi(80), non_gbr_rates}}, // 5QI 80, priority=68
+        // Delay-critical GBR — 15 Mbps
+        {17, {uint_to_five_qi(82), dc_gbr_rates}}, // 5QI 82, priority=19
+        {16, {uint_to_five_qi(83), dc_gbr_rates}}, // 5QI 83, priority=22
+        {15, {uint_to_five_qi(84), dc_gbr_rates}}, // 5QI 84, priority=24
+        {14, {uint_to_five_qi(85), dc_gbr_rates}}, // 5QI 85, priority=21
     };
-    return mapping_table;
+    return profile_table;
   }
 
-  mutable std::mutex                              mutex;
-  std::unordered_map<uint32_t, uint8_t>          ue_dscp_map;      ///< UE index -> DSCP mapping
-  std::map<uint8_t, five_qi_t>                   dscp_to_5qi_map; ///< Explicit DSCP -> 5QI mapping
+  /// \brief Resolve DSCP profile (mutex must be held). Runtime 5QI override updates five_qi only.
+  std::optional<dscp_qos_profile> resolve_dscp_profile_locked(uint8_t dscp) const
+  {
+    const auto& profile_table = get_dscp_qos_profile_table();
+    auto        profile_it    = profile_table.find(dscp);
+    if (profile_it == profile_table.end()) {
+      auto explicit_it = dscp_to_5qi_map.find(dscp);
+      if (explicit_it != dscp_to_5qi_map.end()) {
+        return dscp_qos_profile{explicit_it->second, std::nullopt};
+      }
+      return {};
+    }
+    dscp_qos_profile profile = profile_it->second;
+    auto             explicit_it = dscp_to_5qi_map.find(dscp);
+    if (explicit_it != dscp_to_5qi_map.end()) {
+      profile.five_qi = explicit_it->second;
+    }
+    if (get_5qi_to_qos_characteristics_mapping(profile.five_qi) == nullptr) {
+      return {};
+    }
+    return profile;
+  }
+
+  /// \brief Resolve DSCP to 5QI using explicit and profile tables (mutex must be held).
+  std::optional<five_qi_t> resolve_dscp_to_5qi_locked(uint8_t dscp) const
+  {
+    const std::optional<dscp_qos_profile> profile = resolve_dscp_profile_locked(dscp);
+    if (profile.has_value()) {
+      return profile->five_qi;
+    }
+    return {};
+  }
+
+  mutable std::mutex                          mutex;
+  std::unordered_map<uint32_t, uint8_t>      ue_dscp_map;         ///< UE index -> DSCP mapping
+  std::map<uint8_t, five_qi_t>               dscp_to_5qi_map;     ///< Runtime DSCP -> 5QI override
+  std::map<uint8_t, dscp_qos_rate_target>    dscp_to_qos_rate_map; ///< Runtime DSCP -> GBR/MBR override
 };
 
 } // namespace srsran

@@ -26,10 +26,12 @@
 #include "srsran/adt/slotted_array.h"
 #include "srsran/ran/qos/arp_prio_level.h"
 #include "srsran/ran/qos/five_qi.h"
+#include "srsran/ran/qos/five_qi_qos_mapping.h"
 #include "srsran/ran/qos/qos_prio_level.h"
 #include "srsran/scheduler/config/scheduler_expert_config.h"
 #include "srsran/support/math/exponential_averager.h"
 #include <map>
+#include <optional>
 
 namespace srsran {
 
@@ -104,6 +106,9 @@ private:
     exp_average_fast_start<double> total_dl_avg_rate_;
     // Average UL rate expressed in bytes per slot experienced by UE.
     exp_average_fast_start<double> total_ul_avg_rate_;
+
+    std::optional<uint8_t>  last_applied_dscp;
+    std::optional<uint64_t> last_applied_rate_bps;
   };
 
   slotted_id_table<du_ue_index_t, ue_ctxt, MAX_NOF_DU_UES> ue_history_db;
@@ -113,4 +118,5 @@ private:
 };
 
 } // namespace srsran
+
 

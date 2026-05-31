@@ -24,6 +24,7 @@
 
 #include "../ue_context/ue.h"
 #include "srsran/adt/slotted_array.h"
+#include <limits>
 
 namespace srsran {
 
@@ -112,6 +113,43 @@ public:
     return contains(lcid) ? u.dl_logical_channels().hol_toa(lcid) : slot_point{};
   }
 
+  /// Push DSCP-derived GBR/MBR into the DL MAC token bucket for this LC.
+  void set_dl_token_rates(lcid_t lcid, uint64_t gbr_bps, uint64_t mbr_bps, bool air_rate_cap = false) const
+  {
+    u.dl_logical_channels().set_token_rates(lcid, gbr_bps, mbr_bps, air_rate_cap);
+  }
+
+  /// True when GBR token bucket is empty for pending DRB data in this slice (defer DL scheduling this slot).
+  bool dl_token_throttled() const { return u.dl_logical_channels().is_token_throttled(slice_id); }
+
+  /// Available GBR token bytes for \c lcid in this slice (no limit when non-GBR or LC not in slice).
+  unsigned get_dl_token_budget(lcid_t lcid) const
+  {
+    return contains(lcid) ? u.dl_logical_channels().get_dl_token_budget(lcid)
+                          : std::numeric_limits<unsigned>::max();
+  }
+
+  /// Max newTx DL grant size for this slice (pending bytes with GBR LCs capped by token).
+  unsigned dl_grant_byte_budget() const { return u.dl_logical_channels().get_dl_grant_byte_budget(slice_id); }
+
+  /// True when GBR/DC-GBR air-interface TBS cap is active for this slice.
+  bool dl_air_rate_cap_enabled() const { return u.dl_logical_channels().dl_air_rate_cap_enabled(slice_id); }
+
+  /// Per-slot GBR grant byte cap for GBR/DC-GBR air rate limiting.
+  unsigned dl_gbr_air_cap_grant_bytes() const
+  {
+    return u.dl_logical_channels().get_dl_gbr_air_cap_grant_bytes(slice_id);
+  }
+
+  /// Clear DRB moving-average rate history (e.g. on DSCP / rate profile change).
+  void reset_dl_rate_averages() const { u.dl_logical_channels().reset_drbs_rate_averages(); }
+
+  /// Debit GBR/DC-GBR token by committed newTx TBS.
+  void debit_dl_grant_tokens(unsigned tbs_bytes) const
+  {
+    u.dl_logical_channels().debit_dl_grant_tokens(slice_id, tbs_bytes);
+  }
+
 private:
   friend class slice_ue_repository;
 
@@ -169,3 +207,4 @@ private:
 };
 
 } // namespace srsran
+

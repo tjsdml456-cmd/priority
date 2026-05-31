@@ -187,7 +187,34 @@ public:
   /// \brief Returns a list of LCIDs sorted based on decreasing order of priority.
   span<const lcid_t> get_prioritized_logical_channels() const { return sorted_channels; }
 
+  /// \brief Configure per-LC token bucket rates (GBR/MBR in bps). GBR=0 disables token limiting (non-GBR).
+  /// \param air_rate_cap When true (GBR/DC-GBR), enforce per-slot TBS cap + TBS-based token debit at grant time.
+  void set_token_rates(lcid_t lcid, uint64_t gbr_bps, uint64_t mbr_bps, bool air_rate_cap = false);
+
+  /// \brief True if a GBR logical channel in \c slice_id has pending data but token is below \c MIN_TOKEN_TO_SCHED.
+  bool is_token_throttled(ran_slice_id_t slice_id) const;
+
+  /// \brief Available GBR token bytes for \c lcid (no limit when non-GBR).
+  unsigned get_dl_token_budget(lcid_t lcid) const;
+
+  /// \brief True if any LC in \c slice_id uses GBR/DC-GBR air-interface TBS rate cap.
+  bool dl_air_rate_cap_enabled(ran_slice_id_t slice_id) const;
+
+  /// \brief Max newTx grant bytes for GBR/DC-GBR air cap (one slot of GBR refill). UINT_MAX when disabled.
+  unsigned get_dl_gbr_air_cap_grant_bytes(ran_slice_id_t slice_id) const;
+
+  /// \brief Max newTx DL grant size for \c slice_id: pending bytes with GBR LCs capped by token balance.
+  unsigned get_dl_grant_byte_budget(ran_slice_id_t slice_id) const;
+
+  /// \brief Reset DRB per-LC rate moving averages (after DSCP / scheduler rate profile change).
+  void reset_drbs_rate_averages();
+
+  /// \brief Debit GBR/DC-GBR token by committed newTx TBS (Throughput calc on HARQ ACK).
+  void debit_dl_grant_tokens(ran_slice_id_t slice_id, unsigned tbs_bytes);
+
 private:
+  /// Refresh tb_gbr/tb_mbr on a channel from runtime_gbr_qos_info in channel_configs.
+  void sync_lc_token_rates_from_config(lcid_t lcid);
   struct channel_context : public intrusive_double_linked_list_element<> {
     /// Whether the configured logical channel is currently active.
     bool active = false;
@@ -201,6 +228,14 @@ private:
     slot_point hol_toa;
     /// Slice associated with this channel.
     std::optional<ran_slice_id_t> slice_id;
+    /// Token bucket balance (bytes) for GBR rate enforcement.
+    double token_bytes = 0.0;
+    /// Token refill rate (bps) from current DSCP profile.
+    uint64_t tb_gbr_bps = 0;
+    /// Token bucket cap reference (bps) from current DSCP profile.
+    uint64_t tb_mbr_bps = 0;
+    /// When true (GBR/DC-GBR): per-slot TBS cap + grant-time token debit; non-GBR keeps MAC SDU token path.
+    bool air_rate_cap = false;
 
     void reset();
   };
@@ -283,3 +318,4 @@ unsigned build_dl_transport_block_info(dl_msg_tb_info&             tb_info,
                                        ran_slice_id_t              slice_id);
 
 } // namespace srsran
+
