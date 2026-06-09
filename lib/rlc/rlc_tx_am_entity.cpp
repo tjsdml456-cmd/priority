@@ -31,6 +31,15 @@
 
 using namespace srsran;
 
+namespace {
+
+double rlc_queue_delay_ms(const std::chrono::time_point<std::chrono::steady_clock>& time_of_arrival)
+{
+  return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - time_of_arrival).count();
+}
+
+} // namespace
+
 rlc_tx_am_entity::rlc_tx_am_entity(gnb_du_id_t                          gnb_du_id,
                                    du_ue_index_t                        ue_index,
                                    rb_id_t                              rb_id_,
@@ -264,6 +273,12 @@ size_t rlc_tx_am_entity::build_new_pdu(span<uint8_t> rlc_pdu_buf)
     return 0;
   }
   logger.log_debug("Read SDU. sn={} pdcp_sn={} sdu_len={}", st.tx_next, sdu.pdcp_sn, sdu.buf.length());
+  logger.log_info("[RLC-QUEUE-DELAY] queue_delay_ms={:.3f} pdcp_sn={} sdu_len={} queue_sdus={} queue_bytes={}",
+                  rlc_queue_delay_ms(sdu.time_of_arrival),
+                  sdu.pdcp_sn.has_value() ? static_cast<unsigned>(sdu.pdcp_sn.value()) : 0U,
+                  sdu.buf.length(),
+                  queue_state.n_sdus,
+                  queue_state.n_bytes);
 
   // insert newly assigned SN into window and use reference for in-place operations
   // NOTE: from now on, we can't return from this function anymore before increasing tx_next
@@ -1300,3 +1315,4 @@ bool rlc_tx_am_entity::valid_nack(uint32_t ack_sn, const rlc_am_status_nack& nac
   }
   return true;
 }
+

@@ -27,6 +27,15 @@
 
 using namespace srsran;
 
+namespace {
+
+double rlc_queue_delay_ms(const std::chrono::time_point<std::chrono::steady_clock>& time_of_arrival)
+{
+  return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - time_of_arrival).count();
+}
+
+} // namespace
+
 rlc_tx_um_entity::rlc_tx_um_entity(gnb_du_id_t                          du_id,
                                    du_ue_index_t                        ue_index,
                                    rb_id_t                              rb_id_,
@@ -147,6 +156,12 @@ size_t rlc_tx_um_entity::pull_pdu(span<uint8_t> mac_sdu_buf) noexcept SRSRAN_RTS
                      sdu.pdcp_sn,
                      sdu.buf.length(),
                      queue_state);
+    logger.log_info("[RLC-QUEUE-DELAY] queue_delay_ms={:.3f} pdcp_sn={} sdu_len={} queue_sdus={} queue_bytes={}",
+                    rlc_queue_delay_ms(sdu.time_of_arrival),
+                    sdu.pdcp_sn.has_value() ? static_cast<unsigned>(sdu.pdcp_sn.value()) : 0U,
+                    sdu.buf.length(),
+                    queue_state.n_sdus,
+                    queue_state.n_bytes);
 
     // Notify the upper layer about the beginning of the transfer of the current SDU
     if (sdu.pdcp_sn.has_value()) {
@@ -358,3 +373,4 @@ rlc_buffer_state rlc_tx_um_entity::get_buffer_state()
   }
   return bs;
 }
+

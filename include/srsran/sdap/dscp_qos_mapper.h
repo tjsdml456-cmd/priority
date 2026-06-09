@@ -32,7 +32,7 @@
 
 namespace srsran {
 
-/// GFBR/MFBR / scheduler rate targets per DSCP profile (GBR 20M, DC-GBR 15M, non-GBR 10M).
+/// GFBR/MFBR / scheduler rate targets per DSCP profile (GBR 20M/23M, DC-GBR 15M/17M).
 struct dscp_qos_rate_target {
   uint64_t gbr_bps = 0;
   uint64_t mbr_bps = 0;
@@ -159,7 +159,7 @@ public:
     return result;
   }
 
-  /// \brief Map DSCP to scheduler rate target from profile (GBR 20M / DC-GBR 15M / non-GBR 10M).
+  /// \brief Map DSCP to scheduler rate target from profile (GBR / DC-GBR only; non-GBR has no rate target).
   std::optional<dscp_qos_rate_target> map_dscp_to_qos_rates(uint8_t dscp) const
   {
     std::optional<dscp_qos_rate_target> explicit_rates;
@@ -204,32 +204,31 @@ private:
   dscp_qos_mapper(const dscp_qos_mapper&) = delete;
   dscp_qos_mapper& operator=(const dscp_qos_mapper&) = delete;
 
-  /// \brief DSCP profile table: GBR 20 Mbps, DC-GBR 15 Mbps, non-GBR 10 Mbps (token bucket + grant clamp).
+  /// \brief DSCP profile table: GBR 20/23 Mbps, DC-GBR 15/17 Mbps. non-GBR has no rate target.
   static const std::map<uint8_t, dscp_qos_profile>& get_dscp_qos_profile_table()
   {
-    static const dscp_qos_rate_target gbr_rates{20'000'000, 20'000'000};
-    static const dscp_qos_rate_target dc_gbr_rates{15'000'000, 15'000'000};
-    static const dscp_qos_rate_target non_gbr_rates{10'000'000, 10'000'000};
+    static const dscp_qos_rate_target gbr_rates{20'000'000, 23'000'000};
+    static const dscp_qos_rate_target dc_gbr_rates{15'000'000, 17'000'000};
 
     static const std::map<uint8_t, dscp_qos_profile> profile_table = {
-        // GBR — 20 Mbps (priority: lower value = higher scheduling priority, TS 23.501)
-        {44, {uint_to_five_qi(66), gbr_rates}}, // 5QI 66, priority=20
-        {34, {uint_to_five_qi(2), gbr_rates}},  // 5QI 2,  priority=40
-        {32, {uint_to_five_qi(3), gbr_rates}},  // 5QI 3,  priority=30
-        {28, {uint_to_five_qi(4), gbr_rates}},  // 5QI 4,  priority=50
-        {38, {uint_to_five_qi(67), gbr_rates}}, // 5QI 67, priority=15
-        // non-GBR — 10 Mbps (same token bucket path as GBR; 5QI Type stays non-GBR)
-        {40, {uint_to_five_qi(5), non_gbr_rates}},  // 5QI 5,  priority=10
-        {26, {uint_to_five_qi(6), non_gbr_rates}},  // 5QI 6,  priority=60
-        {22, {uint_to_five_qi(7), non_gbr_rates}},  // 5QI 7,  priority=70
-        {0, {uint_to_five_qi(9), non_gbr_rates}},   // 5QI 9,  priority=90
-        {30, {uint_to_five_qi(70), non_gbr_rates}}, // 5QI 70, priority=55
-        {24, {uint_to_five_qi(80), non_gbr_rates}}, // 5QI 80, priority=68
+        // GBR — 20 Mbps
+        {44, {uint_to_five_qi(66), gbr_rates}},
+        {34, {uint_to_five_qi(2), gbr_rates}},
+        {32, {uint_to_five_qi(3), gbr_rates}},
+        {28, {uint_to_five_qi(4), gbr_rates}},
+        {38, {uint_to_five_qi(67), gbr_rates}},
+        // non-GBR — 5QI/PDB/priority only (no token bucket)
+        {40, {uint_to_five_qi(5), std::nullopt}},
+        {26, {uint_to_five_qi(6), std::nullopt}},
+        {22, {uint_to_five_qi(7), std::nullopt}},
+        {0, {uint_to_five_qi(9), std::nullopt}},
+        {30, {uint_to_five_qi(70), std::nullopt}},
+        {24, {uint_to_five_qi(80), std::nullopt}},
         // Delay-critical GBR — 15 Mbps
-        {17, {uint_to_five_qi(82), dc_gbr_rates}}, // 5QI 82, priority=19
-        {16, {uint_to_five_qi(83), dc_gbr_rates}}, // 5QI 83, priority=22
-        {15, {uint_to_five_qi(84), dc_gbr_rates}}, // 5QI 84, priority=24
-        {14, {uint_to_five_qi(85), dc_gbr_rates}}, // 5QI 85, priority=21
+        {17, {uint_to_five_qi(82), dc_gbr_rates}},
+        {16, {uint_to_five_qi(83), dc_gbr_rates}},
+        {15, {uint_to_five_qi(84), dc_gbr_rates}},
+        {14, {uint_to_five_qi(85), dc_gbr_rates}},
     };
     return profile_table;
   }
@@ -274,6 +273,7 @@ private:
 };
 
 } // namespace srsran
+
 
 
 

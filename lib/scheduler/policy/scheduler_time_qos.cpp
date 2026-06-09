@@ -39,6 +39,26 @@ static constexpr unsigned MAX_PF_COEFF = 10;
 // [Implementation-defined] Maximum number of slots skipped between scheduling opportunities.
 static constexpr unsigned MAX_SLOT_SKIPPED = 20;
 
+static bool qos_res_type_uses_gbr_rate_target(qos_flow_resource_type res_type)
+{
+  return res_type == qos_flow_resource_type::gbr or res_type == qos_flow_resource_type::delay_critical_gbr;
+}
+
+static uint64_t dscp_gbr_rate_bps_for_history(uint8_t dscp)
+{
+  auto& mapper = dscp_qos_mapper::get_instance();
+  const std::optional<five_qi_t> mapped_5qi = mapper.map_dscp_to_5qi(dscp);
+  if (not mapped_5qi.has_value()) {
+    return 0;
+  }
+  const standardized_qos_characteristics* qos_chars = get_5qi_to_qos_characteristics_mapping(mapped_5qi.value());
+  if (qos_chars == nullptr or not qos_res_type_uses_gbr_rate_target(qos_chars->res_type)) {
+    return 0;
+  }
+  const std::optional<dscp_qos_rate_target> rates = mapper.map_dscp_to_qos_rates(dscp);
+  return rates.has_value() ? rates->gbr_bps : 0;
+}
+
 scheduler_time_qos::scheduler_time_qos(const scheduler_ue_expert_config& expert_cfg_, du_cell_index_t cell_index_) :
   params(std::get<time_qos_scheduler_config>(expert_cfg_.policy_cfg)),
   cell_index(cell_index_)
@@ -111,7 +131,7 @@ static constexpr double max_metric_weight = 1.0e12;
 // [Implementation-defined] Averaging window for GBR rate weights (matches dl_logical_channel_manager).
 static constexpr unsigned QOS_RATE_AVG_WINDOW_MS = 300;
 
-// 15M DC-GBR / 20M GBR: TBS-level air cap. 10M non-GBR stays on MAC token path (matches dl_logical_channel_manager).
+// 15M DC-GBR / 20M GBR: TBS-level air cap. non-GBR has no token bucket.
 static constexpr uint64_t DL_AIR_TBS_CAP_MIN_GBR_BPS = 14'000'000;
 
 /// Tracking weight: boost below GBR, neutral between GBR and MBR, penalty above MBR.
@@ -231,10 +251,15 @@ static double compute_dl_qos_weights(const slice_ue&                  u,
                     delay_weight);
       }
 
+      if (not qos_res_type_uses_gbr_rate_target(lc->qos->runtime_qos.res_type)) {
+        gbr_weight += 1.0; // non-GBR: no token bucket / no GBR rate target
+        continue;
+      }
+
       const std::optional<dscp_qos_rate_target> rates =
           dscp_qos_mapper::get_instance().get_qos_rates_for_ue(static_cast<uint32_t>(u.ue_index()));
       if (not rates.has_value()) {
-        gbr_weight += 1.0; // non-GBR: neutral weight so PF competition still applies
+        gbr_weight += 1.0;
         continue;
       }
 
@@ -375,10 +400,15 @@ static double compute_ul_qos_weights(const slice_ue&                  u,
                                      min_combined_prio);
       }
 
+      if (not qos_res_type_uses_gbr_rate_target(lc->qos->runtime_qos.res_type)) {
+        gbr_weight += 1.0;
+        continue;
+      }
+
       const std::optional<dscp_qos_rate_target> rates =
           dscp_qos_mapper::get_instance().get_qos_rates_for_ue(static_cast<uint32_t>(u.ue_index()));
       if (not rates.has_value()) {
-        gbr_weight += 1.0; // non-GBR: neutral weight so PF competition still applies
+        gbr_weight += 1.0;
         continue;
       }
 
@@ -425,9 +455,7 @@ void scheduler_time_qos::ue_ctxt::apply_5qi_based_runtime_overrides(const slice_
   const std::optional<uint8_t> ue_dscp_global = mapper.get_dscp_for_ue(static_cast<uint32_t>(ue_index));
   uint64_t                     new_rate_bps   = 0;
   if (ue_dscp_global.has_value()) {
-    if (const std::optional<dscp_qos_rate_target> rates = mapper.map_dscp_to_qos_rates(ue_dscp_global.value())) {
-      new_rate_bps = rates->gbr_bps;
-    }
+    new_rate_bps = dscp_gbr_rate_bps_for_history(ue_dscp_global.value());
   }
 
   if (ue_dscp_global.has_value() and last_applied_dscp.has_value()) {
@@ -498,17 +526,22 @@ void scheduler_time_qos::ue_ctxt::apply_5qi_based_runtime_overrides(const slice_
     lc->qos->set_runtime_qos(runtime_qos);
 
     if (ue_dscp.has_value()) {
-      if (const std::optional<dscp_qos_rate_target> rates = mapper.map_dscp_to_qos_rates(ue_dscp.value())) {
-        gbr_qos_flow_information gbr_info{};
-        gbr_info.gbr_dl    = rates->gbr_bps;
-        gbr_info.max_br_dl = rates->mbr_bps;
-        gbr_info.gbr_ul    = rates->gbr_bps;
-        gbr_info.max_br_ul = rates->mbr_bps;
-        lc->qos->runtime_gbr_qos_info = gbr_info;
-        const bool air_rate_cap = rates->gbr_bps >= DL_AIR_TBS_CAP_MIN_GBR_BPS;
-        u.set_dl_token_rates(lc->lcid, rates->gbr_bps, rates->mbr_bps, air_rate_cap);
+      if (qos_res_type_uses_gbr_rate_target(runtime_qos.res_type)) {
+        if (const std::optional<dscp_qos_rate_target> rates = mapper.map_dscp_to_qos_rates(ue_dscp.value())) {
+          gbr_qos_flow_information gbr_info{};
+          gbr_info.gbr_dl    = rates->gbr_bps;
+          gbr_info.max_br_dl = rates->mbr_bps;
+          gbr_info.gbr_ul    = rates->gbr_bps;
+          gbr_info.max_br_ul = rates->mbr_bps;
+          lc->qos->runtime_gbr_qos_info = gbr_info;
+          const bool air_rate_cap = rates->gbr_bps >= DL_AIR_TBS_CAP_MIN_GBR_BPS;
+          u.set_dl_token_rates(lc->lcid, rates->gbr_bps, rates->mbr_bps, air_rate_cap);
+        } else {
+          lc->qos->runtime_gbr_qos_info.reset();
+          u.set_dl_token_rates(lc->lcid, 0, 0, false);
+        }
       } else {
-        // No rate profile for this DSCP — disable token bucket.
+        // non-GBR: DSCP→5QI/PDB/priority only — no token bucket or runtime GBR.
         lc->qos->runtime_gbr_qos_info.reset();
         u.set_dl_token_rates(lc->lcid, 0, 0, false);
       }
@@ -714,4 +747,5 @@ void scheduler_time_qos::ue_ctxt::save_ul_alloc(unsigned alloc_bytes)
   }
   ul_sum_alloc_bytes += alloc_bytes;
 }
+
 

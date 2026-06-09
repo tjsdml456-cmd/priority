@@ -31,7 +31,7 @@ using namespace srsran;
 // GBR/DC-GBR air cap: allow up to N slots of GBR bytes per grant (TBS is discrete; 1 slot undershoots target).
 static constexpr unsigned AIR_RATE_CAP_GRANT_SLOT_FACTOR = 2;
 
-// 15M DC-GBR / 20M GBR use TBS-level air cap; 10M non-GBR uses MAC token path only.
+// 15M DC-GBR / 20M GBR use TBS-level air cap; non-GBR has no MAC token bucket.
 static constexpr uint64_t DL_AIR_TBS_CAP_MIN_GBR_BPS = 14'000'000;
 
 static bool dl_air_tbs_cap_applies(uint64_t gbr_bps)
@@ -166,7 +166,10 @@ void dl_logical_channel_manager::sync_lc_token_rates_from_config(lcid_t lcid)
   }
   const logical_channel_config_ptr lc_cfg = (*channel_configs)[lcid];
   if (not lc_cfg->qos.has_value() or not lc_cfg->qos->runtime_gbr_qos_info.has_value()) {
-    // Do not clear tb_gbr/token here; apply_5qi + set_token_rates() owns enable/disable.
+    return;
+  }
+  const qos_flow_resource_type res_type = lc_cfg->qos->runtime_qos.res_type;
+  if (res_type != qos_flow_resource_type::gbr and res_type != qos_flow_resource_type::delay_critical_gbr) {
     return;
   }
   ch.tb_gbr_bps = lc_cfg->qos->runtime_gbr_qos_info->gbr_dl;
@@ -625,7 +628,7 @@ unsigned dl_logical_channel_manager::allocate_mac_sdu(dl_msg_lc_info& subpdu, lc
     alloc_bytes--;
   }
 
-  // GBR token ceiling at MAC (non-GBR 10M path). GBR/DC-GBR air cap uses grant-time TBS debit instead.
+  // GBR/DC-GBR token ceiling at MAC. non-GBR has tb_gbr_bps==0 (no token limit).
   if (ch.tb_gbr_bps > 0 and not ch.air_rate_cap) {
     const unsigned token_limit = static_cast<unsigned>(ch.token_bytes);
     if (alloc_bytes > token_limit) {
@@ -835,6 +838,7 @@ unsigned srsran::build_dl_transport_block_info(dl_msg_tb_info&             tb_in
   }
   return total_subpdu_bytes;
 }
+
 
 
 
