@@ -198,6 +198,23 @@ public:
     dscp_to_qos_rate_map[dscp] = rates;
   }
 
+  /// \brief Cache effective runtime PDB (ms) from scheduler DSCP phase updates (RLC AQM reads this).
+  void set_runtime_pdb_for_ue(uint32_t ue_index, unsigned pdb_ms)
+  {
+    std::lock_guard<std::mutex> lock(mutex);
+    ue_runtime_pdb_map[ue_index] = pdb_ms;
+  }
+
+  std::optional<unsigned> get_runtime_pdb_for_ue(uint32_t ue_index) const
+  {
+    std::lock_guard<std::mutex> lock(mutex);
+    const auto it = ue_runtime_pdb_map.find(ue_index);
+    if (it != ue_runtime_pdb_map.end()) {
+      return it->second;
+    }
+    return {};
+  }
+
 private:
   dscp_qos_mapper()  = default;
   ~dscp_qos_mapper() = default;
@@ -267,12 +284,14 @@ private:
   }
 
   mutable std::mutex                          mutex;
-  std::unordered_map<uint32_t, uint8_t>      ue_dscp_map;         ///< UE index -> DSCP mapping
-  std::map<uint8_t, five_qi_t>               dscp_to_5qi_map;     ///< Runtime DSCP -> 5QI override
+  std::unordered_map<uint32_t, uint8_t>      ue_dscp_map;          ///< UE index -> DSCP mapping
+  std::unordered_map<uint32_t, unsigned>     ue_runtime_pdb_map;   ///< UE index -> runtime PDB (ms)
+  std::map<uint8_t, five_qi_t>               dscp_to_5qi_map;      ///< Runtime DSCP -> 5QI override
   std::map<uint8_t, dscp_qos_rate_target>    dscp_to_qos_rate_map; ///< Runtime DSCP -> GBR/MBR override
 };
 
 } // namespace srsran
+
 
 
 

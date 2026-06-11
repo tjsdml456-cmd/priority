@@ -21,6 +21,8 @@
  */
 
 #include "rlc_tx_am_entity.h"
+#include "rlc_hol_pdb_helper.h"
+#include "rlc_pdb_aqm.h"
 #include "srsran/adt/scope_exit.h"
 #include "srsran/instrumentation/traces/du_traces.h"
 #include "srsran/pdcp/pdcp_sn_util.h"
@@ -28,6 +30,7 @@
 #include "srsran/support/rtsan.h"
 #include "srsran/support/srsran_assert.h"
 #include "srsran/support/tracing/event_tracing.h"
+#include <array>
 
 using namespace srsran;
 
@@ -75,6 +78,7 @@ rlc_tx_am_entity::rlc_tx_am_entity(gnb_du_id_t                          gnb_du_i
   poll_retransmit_timer(pcell_timer_factory.create_timer()),
   pcell_executor(pcell_executor_),
   ue_executor(ue_executor_),
+  du_ue_index(ue_index),
   pcap_context(ue_index, rb_id_, config)
 {
   metrics_low.metrics_set_mode(rlc_mode::am);
@@ -100,11 +104,39 @@ rlc_tx_am_entity::rlc_tx_am_entity(gnb_du_id_t                          gnb_du_i
   logger.log_info("RLC AM configured. {}", cfg);
 }
 
+unsigned rlc_tx_am_entity::drop_pdb_expired_am_backlog()
+{
+  const du_ue_index_t ue_idx    = du_ue_index;
+  const uint32_t      mapper_ue = rlc_mapper_ue_index(ue_idx);
+
+  const std::optional<unsigned> current_pdb = resolve_rlc_hol_pdb_ms_for_drop(mapper_ue);
+  static srslog::basic_logger&  aqm_logger  = srslog::fetch_basic_logger("RLC", false);
+
+  static std::array<std::optional<unsigned>, MAX_NOF_DU_UES> last_drop_pdb{};
+  if (current_pdb.has_value() && last_drop_pdb[mapper_ue % MAX_NOF_DU_UES].has_value() &&
+      current_pdb.value() < last_drop_pdb[mapper_ue % MAX_NOF_DU_UES].value()) {
+    aqm_logger.warning("[PHASE-SHRINK] UE{} {} drop_pdb {} -> {} queue_sdus={}",
+                       fmt::underlying(ue_idx),
+                       rb_id,
+                       last_drop_pdb[mapper_ue % MAX_NOF_DU_UES].value(),
+                       current_pdb.value(),
+                       sdu_queue.get_state().n_sdus);
+  }
+  if (current_pdb.has_value()) {
+    last_drop_pdb[mapper_ue % MAX_NOF_DU_UES] = current_pdb;
+  }
+
+  // AQM applies only to SDUs still in the RLC queue (not yet transmitted). In-flight tx_window PDUs are
+  // left to normal AM RETX/ACK; dropping them breaks the bearer and collapses throughput.
+  return drop_pdb_expired_hol_sdus(sdu_queue, logger, ue_idx, rb_id, pdb_aqm_drop_total);
+}
+
 // TS 38.322 v16.2.0 Sec. 5.2.3.1
 void rlc_tx_am_entity::handle_sdu(byte_buffer sdu_buf, bool is_retx)
 {
   rlc_sdu sdu;
   sdu.time_of_arrival = std::chrono::steady_clock::now();
+  stamp_rlc_sdu_pdb_ms(sdu, rlc_mapper_ue_index(du_ue_index));
 
   sdu.buf     = std::move(sdu_buf);
   sdu.is_retx = is_retx;
@@ -286,6 +318,7 @@ size_t rlc_tx_am_entity::build_new_pdu(span<uint8_t> rlc_pdu_buf)
   sdu_info.sdu                 = std::move(sdu.buf); // Move SDU into TX window SDU info
   sdu_info.is_retx             = sdu.is_retx;
   sdu_info.pdcp_sn             = sdu.pdcp_sn;
+  sdu_info.pdb_ms              = sdu.pdb_ms;
   sdu_info.time_of_arrival     = sdu.time_of_arrival;
   sdu_info.time_of_departure   = std::chrono::steady_clock::now();
 
@@ -1014,9 +1047,15 @@ void rlc_tx_am_entity::handle_changed_buffer_state()
 void rlc_tx_am_entity::update_mac_buffer_state(bool force_notify) noexcept SRSRAN_RTSAN_NONBLOCKING
 {
   pending_buffer_state.clear(std::memory_order_seq_cst);
+  const unsigned pdb_dropped = drop_pdb_expired_am_backlog();
+  if (pdb_dropped > 0) {
+    metrics_high.metrics_add_discard(pdb_dropped);
+  }
   rlc_buffer_state bs = get_buffer_state();
-  if (force_notify || bs.pending_bytes <= MAX_DL_PDU_LENGTH || prev_buffer_state.pending_bytes <= MAX_DL_PDU_LENGTH ||
-      suspend_bs_notif_barring || bs.hol_toa < prev_buffer_state.hol_toa) {
+  const bool force_after_drop = pdb_dropped > 0;
+  if (force_notify || force_after_drop || bs.pending_bytes <= MAX_DL_PDU_LENGTH ||
+      prev_buffer_state.pending_bytes <= MAX_DL_PDU_LENGTH || suspend_bs_notif_barring ||
+      bs.hol_toa < prev_buffer_state.hol_toa) {
     logger.log_debug("Sending buffer state update to lower layer. bs={}", bs);
     suspend_bs_notif_barring = false;
     lower_dn.on_buffer_state_update(bs);
@@ -1052,7 +1091,9 @@ rlc_buffer_state rlc_tx_am_entity::get_buffer_state()
   } else {
     const rlc_sdu* next_sdu = sdu_queue.front();
     if (next_sdu != nullptr) {
-      steady_hol_toa = next_sdu->time_of_arrival;    
+      steady_hol_toa = next_sdu->time_of_arrival;
+    } else if (tx_window.has_sn(st.tx_next_ack)) {
+      steady_hol_toa = tx_window[st.tx_next_ack].time_of_arrival;
     }
   }
 

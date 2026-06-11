@@ -223,6 +223,10 @@ std::optional<sch_mcs_tbs> srsran::compute_dl_mcs_tbs(const pdsch_config_params&
                                                       unsigned                   nof_prbs,
                                                       bool                       contains_dc)
 {
+  if (nof_prbs == 0) {
+    return std::nullopt;
+  }
+
   // The maximum supported code rate is 0.95, as per TS38.214, Section 5.1.3. The maximum code rate is defined for DL,
   // but we consider the same value for UL.
   static const double max_supported_code_rate = 0.95;
@@ -238,6 +242,10 @@ std::optional<sch_mcs_tbs> srsran::compute_dl_mcs_tbs(const pdsch_config_params&
                                                             .nof_layers       = pdsch_params.nof_layers,
                                                             .tb_scaling_field = pdsch_params.tb_scaling_field,
                                                             .n_prb            = nof_prbs});
+
+  if (tbs_bits == 0) {
+    return std::nullopt;
+  }
 
   // > Compute the effective code rate.
   dlsch_configuration dlsch_info{.tbs                = static_cast<units::bits>(tbs_bits),
@@ -270,11 +278,18 @@ std::optional<sch_mcs_tbs> srsran::compute_dl_mcs_tbs(const pdsch_config_params&
     dlsch_info.tbs         = static_cast<units::bits>(tbs_bits);
     dlsch_info.mcs_descr   = mcs_info;
     dlsch_info.contains_dc = contains_dc;
-    effective_code_rate    = get_dlsch_information(dlsch_info).get_effective_code_rate();
+    if (tbs_bits == 0) {
+      break;
+    }
+    effective_code_rate = get_dlsch_information(dlsch_info).get_effective_code_rate();
   }
 
   // If no MCS such that effective code rate <= 0.95, return an empty optional object.
   if (effective_code_rate > max_supported_code_rate and mcs == 0) {
+    return std::nullopt;
+  }
+
+  if (tbs_bits == 0) {
     return std::nullopt;
   }
 
@@ -410,3 +425,4 @@ unsigned srsran::compute_ul_tbs_unsafe(const pusch_config_params& pusch_cfg, sch
                                                                .n_prb            = nof_prbs}) /
          NOF_BITS_PER_BYTE;
 }
+

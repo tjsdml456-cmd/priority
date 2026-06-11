@@ -419,6 +419,16 @@ void ue_cell_grid_allocator::set_pdsch_params(dl_grant_info&                    
     }
   }
 
+  if (mcs_tbs_info.tbs == 0) {
+    logger.warning("ue={} rnti={}: Cancelling PDSCH grant. Cause: TBS is zero after rate-cap/MCS selection.",
+                   fmt::underlying(u.ue_index),
+                   u.crnti);
+    grant.pdcch->ctx.rnti       = rnti_t::INVALID_RNTI;
+    grant.pdsch->pdsch_cfg.rnti = rnti_t::INVALID_RNTI;
+    grant.h_dl.reset();
+    return;
+  }
+
   // Mark resources as occupied in the ResourceGrid.
   pdsch_alloc.dl_res_grid.fill(grant_info{scs, pdsch_td_cfg.symbols, crbs.first});
   if (not crbs.second.empty()) {
@@ -1046,4 +1056,5 @@ void ue_cell_grid_allocator::ul_newtx_grant_builder::set_pusch_params(const vrb_
   // Set PUSCH parameters and set parent as nullptr to avoid further modifications.
   parent = nullptr;
 }
+
 
