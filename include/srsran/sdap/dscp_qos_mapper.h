@@ -32,7 +32,7 @@
 
 namespace srsran {
 
-/// GFBR/MFBR / scheduler rate targets per DSCP profile (GBR 20M/23M, DC-GBR 15M/17M).
+/// GFBR/MFBR / scheduler rate targets per DSCP profile (GBR 20M, DC-GBR 15M; MBR = GBR).
 struct dscp_qos_rate_target {
   uint64_t gbr_bps = 0;
   uint64_t mbr_bps = 0;
@@ -221,11 +221,11 @@ private:
   dscp_qos_mapper(const dscp_qos_mapper&) = delete;
   dscp_qos_mapper& operator=(const dscp_qos_mapper&) = delete;
 
-  /// \brief DSCP profile table: GBR 20/23 Mbps, DC-GBR 15/17 Mbps. non-GBR has no rate target.
+  /// \brief DSCP profile table: GBR 20 Mbps, DC-GBR 15 Mbps (MBR = GBR). non-GBR has no rate target.
   static const std::map<uint8_t, dscp_qos_profile>& get_dscp_qos_profile_table()
   {
-    static const dscp_qos_rate_target gbr_rates{20'000'000, 23'000'000};
-    static const dscp_qos_rate_target dc_gbr_rates{15'000'000, 17'000'000};
+    static const dscp_qos_rate_target gbr_rates{20'000'000, 20'000'000};
+    static const dscp_qos_rate_target dc_gbr_rates{15'000'000, 15'000'000};
 
     static const std::map<uint8_t, dscp_qos_profile> profile_table = {
         // GBR — 20 Mbps
