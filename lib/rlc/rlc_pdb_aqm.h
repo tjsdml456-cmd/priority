@@ -39,14 +39,11 @@ inline unsigned drop_pdb_expired_hol_sdus(rlc_sdu_queue_lockfree& sdu_queue,
                                           rb_id_t                 rb_id,
                                           unsigned&               drop_total)
 {
-  if (not RLC_PDB_AQM_ENABLED) {
-    return 0;
-  }
-
   const uint32_t                mapper_ue   = rlc_mapper_ue_index(ue_index);
   const std::optional<unsigned> current_pdb = resolve_rlc_hol_pdb_ms_for_drop(mapper_ue);
   static srslog::basic_logger&  aqm_logger  = srslog::fetch_basic_logger("RLC", false);
 
+  // Queuing-delay probe only (RLC HOL sojourn); no packet drops when AQM is disabled.
   static std::array<unsigned, MAX_NOF_DU_UES> aqm_probe_ctr{};
   const rlc_sdu_queue_lockfree::state_t       qstate = sdu_queue.get_state();
   if (qstate.n_sdus > 0 && ++aqm_probe_ctr[mapper_ue % MAX_NOF_DU_UES] % 256 == 0) {
@@ -66,6 +63,12 @@ inline unsigned drop_pdb_expired_hol_sdus(rlc_sdu_queue_lockfree& sdu_queue,
                        hol != nullptr && rlc_sdu_pdb_expired(*hol, mapper_ue));
   }
 
+  if (not RLC_PDB_AQM_ENABLED) {
+    return 0;
+  }
+
+  // PDB AQM drop loop disabled — scheduling-only delay control (no forced SOJOURN-DROP).
+#if 0
   unsigned dropped = 0;
   while (dropped < RLC_PDB_AQM_MAX_DROPS_PER_PASS) {
     const rlc_sdu* hol = sdu_queue.front();
@@ -116,6 +119,12 @@ inline unsigned drop_pdb_expired_hol_sdus(rlc_sdu_queue_lockfree& sdu_queue,
                        drop_total);
   }
   return dropped;
+#else
+  (void)logger;
+  (void)drop_total;
+  return 0;
+#endif
 }
 
 } // namespace srsran
+

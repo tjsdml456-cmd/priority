@@ -120,7 +120,8 @@ inline void stamp_rlc_sdu_pdb_ms(rlc_sdu& sdu, uint32_t ue_index)
   cache_rlc_ue_runtime_pdb_ms(ue_index, pdb.value());
 }
 
-inline constexpr bool RLC_PDB_AQM_ENABLED = true;
+// Scheduling-only experiment: disable PDB AQM drops (no forced packet loss).
+inline constexpr bool RLC_PDB_AQM_ENABLED = false;
 
 inline constexpr double RLC_PDB_AQM_DROP_FRACTION = 1.0;
 
