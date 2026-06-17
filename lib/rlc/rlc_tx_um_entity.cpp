@@ -374,3 +374,4 @@ rlc_buffer_state rlc_tx_um_entity::get_buffer_state()
   return bs;
 }
 
+

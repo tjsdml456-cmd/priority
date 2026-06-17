@@ -161,3 +161,4 @@ struct formatter<srsran::rlc_tx_um_state> {
 };
 
 } // namespace fmt
+

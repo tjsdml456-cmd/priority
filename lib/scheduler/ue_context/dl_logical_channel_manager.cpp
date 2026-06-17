@@ -21,9 +21,11 @@
  */
 
 #include "dl_logical_channel_manager.h"
+#include "srsran/ran/logical_channel/lcid.h"
 #include "srsran/ran/qos/arp_prio_level.h"
 #include "srsran/srslog/srslog.h"
 #include <algorithm>
+#include <chrono>
 #include <limits>
 
 using namespace srsran;
@@ -100,11 +102,14 @@ static unsigned get_qos_rate_avg_window_msec(const logical_channel_config::qos_i
 }
 
 dl_logical_channel_manager::dl_logical_channel_manager(subcarrier_spacing              scs_common_,
+                                                       du_ue_index_t                   ue_index_,
                                                        bool                            starts_in_fallback,
                                                        logical_channel_config_list_ptr log_channels_configs) :
   slots_per_sec(get_nof_slots_per_subframe(scs_common_) * 1000),
   fallback_state(starts_in_fallback),
-  pending_ces(MAX_PENDING_CES)
+  pending_ces(MAX_PENDING_CES),
+  ue_index(ue_index_),
+  shaped_thp_tracker(ue_index_)
 {
   // Reserve entries to avoid allocating in hot path.
   sorted_channels.reserve(INITIAL_CHANNEL_VEC_CAPACITY);
@@ -152,6 +157,8 @@ void dl_logical_channel_manager::slot_indication()
       }
     }
   }
+
+  shaped_thp_tracker.on_tick(std::chrono::steady_clock::now());
 }
 
 void dl_logical_channel_manager::sync_lc_token_rates_from_config(lcid_t lcid)
@@ -657,6 +664,10 @@ unsigned dl_logical_channel_manager::allocate_mac_sdu(dl_msg_lc_info& subpdu, lc
   subpdu.lcid        = (lcid_dl_sch_t::options)lcid;
   subpdu.sched_bytes = sdu_size;
 
+  if (sdu_size > 0 and not is_srb(lcid)) {
+    shaped_thp_tracker.on_shaped_payload(sdu_size, std::chrono::steady_clock::now());
+  }
+
   if (ch.tb_gbr_bps > 0 and not ch.air_rate_cap) {
     ch.token_bytes -= static_cast<double>(alloc_bytes);
     if (ch.token_bytes < 0) {
@@ -838,6 +849,7 @@ unsigned srsran::build_dl_transport_block_info(dl_msg_tb_info&             tb_in
   }
   return total_subpdu_bytes;
 }
+
 
 
 
