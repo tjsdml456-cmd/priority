@@ -23,6 +23,7 @@
 #include "dl_logical_channel_manager.h"
 #include "srsran/ran/logical_channel/lcid.h"
 #include "srsran/ran/qos/arp_prio_level.h"
+#include "srsran/sdap/dscp_qos_mapper.h"
 #include "srsran/srslog/srslog.h"
 #include <algorithm>
 #include <chrono>
@@ -33,8 +34,7 @@ using namespace srsran;
 // GBR/DC-GBR air cap: allow up to N slots of GBR bytes per grant (TBS is discrete; 1 slot undershoots target).
 static constexpr unsigned AIR_RATE_CAP_GRANT_SLOT_FACTOR = 2;
 
-// 15M DC-GBR / 20M GBR use TBS-level air cap; non-GBR has no MAC token bucket.
-static constexpr uint64_t DL_AIR_TBS_CAP_MIN_GBR_BPS = 14'000'000;
+// 5M DC-GBR / 7M GBR use TBS-level air cap; non-GBR has no MAC token bucket.
 
 static bool dl_air_tbs_cap_applies(uint64_t gbr_bps)
 {
@@ -52,7 +52,7 @@ unsigned gbr_bytes_per_slot_ceil(uint64_t gbr_bps, unsigned slots_per_sec)
 unsigned gbr_air_cap_grant_bytes(uint64_t gbr_bps, unsigned slots_per_sec)
 {
   const unsigned per_slot = gbr_bytes_per_slot_ceil(gbr_bps, slots_per_sec);
-  // 2 slots of GBR bytes: enough headroom for discrete TBS (~20M/15M) without cell-peak overshoot.
+  // 2 slots of GBR bytes: enough headroom for discrete TBS (~7M/5M) without cell-peak overshoot.
   return per_slot * AIR_RATE_CAP_GRANT_SLOT_FACTOR;
 }
 
@@ -228,6 +228,11 @@ bool dl_logical_channel_manager::is_token_throttled(ran_slice_id_t slice_id) con
       continue;
     }
 
+    // Per-grant TBS air cap enforces the GBR/DC-GBR rate; token gate would starve every other slot.
+    if (ch.air_rate_cap) {
+      continue;
+    }
+
     if (ch.token_bytes < static_cast<double>(MIN_TOKEN_TO_SCHED)) {
       static srslog::basic_logger& logger = srslog::fetch_basic_logger("SCHED");
       logger.info("[TOKEN-THROTTLE] LCID{} token={:.0f} min={} -> defer",
@@ -265,11 +270,12 @@ unsigned dl_logical_channel_manager::get_dl_grant_byte_budget(ran_slice_id_t sli
     }
     const unsigned pending = get_mac_sdu_required_bytes(ch.buf_st);
     if (ch.tb_gbr_bps > 0) {
-      unsigned budget = std::min(pending, static_cast<unsigned>(ch.token_bytes));
       if (ch.air_rate_cap) {
-        budget = std::min(budget, gbr_air_cap_grant_bytes(ch.tb_gbr_bps, slots_per_sec));
+        lc_bytes += std::min(pending, gbr_air_cap_grant_bytes(ch.tb_gbr_bps, slots_per_sec));
+      } else {
+        unsigned budget = std::min(pending, static_cast<unsigned>(ch.token_bytes));
+        lc_bytes += budget;
       }
-      lc_bytes += budget;
     } else {
       lc_bytes += pending;
     }
@@ -332,10 +338,7 @@ void dl_logical_channel_manager::debit_dl_grant_tokens(ran_slice_id_t slice_id, 
     if (not ch.active or not ch.air_rate_cap) {
       continue;
     }
-    ch.token_bytes -= static_cast<double>(tbs_bytes);
-    if (ch.token_bytes < 0) {
-      ch.token_bytes = 0;
-    }
+    // Air cap sizes each PDSCH TBS; debiting full TBS here double-limits below GBR.
     return;
   }
 }
@@ -849,6 +852,7 @@ unsigned srsran::build_dl_transport_block_info(dl_msg_tb_info&             tb_in
   }
   return total_subpdu_bytes;
 }
+
 
 
 

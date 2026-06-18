@@ -74,7 +74,7 @@ public:
       // dscp_qos_mapper 싱글톤에 UE 인덱스와 DSCP 값을 매핑하여 저장
       // 이후 DU나 스케줄러에서 이 값을 조회할 수 있음
       auto& mapper = dscp_qos_mapper::get_instance();
-      mapper.register_dscp_for_ue(ue_index, dscp.value());
+      mapper.register_dscp_for_ue(ue_index, dscp.value(), sdu.length());
       logger.log_info("[STEP2-MAPPER] DSCP 등록 완료 - UE={} DSCP={} -> dscp_qos_mapper에 저장됨",
                       ue_index, dscp.value());
 
@@ -134,6 +134,7 @@ private:
 } // namespace srs_cu_up
 
 } // namespace srsran
+
 
 
 

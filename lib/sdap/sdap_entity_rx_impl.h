@@ -65,7 +65,7 @@ public:
                       pdu.length());
 
       auto& mapper = dscp_qos_mapper::get_instance();
-      mapper.register_dscp_for_ue(ue_index, dscp.value());
+      mapper.register_dscp_for_ue(ue_index, dscp.value(), pdu.length());
       logger.log_info("[STEP2-MAPPER] DSCP 등록 완료 - UE={} DSCP={} -> dscp_qos_mapper에 저장됨", ue_index, dscp.value());
 
       bool was_new_dscp = (mapper.map_dscp_to_5qi(dscp.value()).has_value() == false);
@@ -136,4 +136,5 @@ private:
 } // namespace srs_cu_up
 
 } // namespace srsran
+
 

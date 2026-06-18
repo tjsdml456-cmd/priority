@@ -32,7 +32,15 @@
 
 namespace srsran {
 
-/// GFBR/MFBR / scheduler rate targets per DSCP profile (GBR 20M, DC-GBR 15M; MBR = GBR).
+/// DSCP-profile GBR targets (bps). MBR equals GBR for each profile.
+inline constexpr uint64_t DSCP_PROFILE_GBR_BPS    = 7'000'000;
+inline constexpr uint64_t DSCP_PROFILE_DC_GBR_BPS = 5'000'000;
+/// GBR/DC-GBR flows at or above this rate use TBS-level air cap (token bucket + per-grant TBS limit).
+inline constexpr uint64_t DL_AIR_TBS_CAP_MIN_GBR_BPS = DSCP_PROFILE_DC_GBR_BPS;
+/// SDAP-observed IPv4 PDUs below this size must not seed or downgrade an active GBR/DC-GBR profile.
+inline constexpr unsigned DSCP_MAPPER_MIN_PDU_LEN = 128;
+
+/// GFBR/MFBR / scheduler rate targets per DSCP profile (GBR 7M, DC-GBR 5M; MBR = GBR).
 struct dscp_qos_rate_target {
   uint64_t gbr_bps = 0;
   uint64_t mbr_bps = 0;
@@ -59,10 +67,32 @@ public:
   
   // UE별 DSCP 값 저장 (SDAP에서 호출)
   /// \brief Register a DSCP value observed for a specific UE
-  /// This allows tracking which DSCP values are actually used by each UE
-  void register_dscp_for_ue(uint32_t ue_index, uint8_t dscp)
+  /// \param pdu_len IPv4 PDU length from SDAP (0 = explicit control path, no size filter).
+  /// Small non-GBR packets must not seed the mapper or downgrade GBR/DC-GBR (e.g. 60-byte TCP ACK).
+  void register_dscp_for_ue(uint32_t ue_index, uint8_t dscp, unsigned pdu_len = 0)
   {
     std::lock_guard<std::mutex> lock(mutex);
+
+    const bool new_has_rate = dscp_has_qos_rate_target_locked(dscp);
+
+    auto it = ue_dscp_map.find(ue_index);
+    if (it == ue_dscp_map.end()) {
+      if (pdu_len > 0 && pdu_len < DSCP_MAPPER_MIN_PDU_LEN && !new_has_rate) {
+        return;
+      }
+      ue_dscp_map[ue_index] = dscp;
+      return;
+    }
+
+    if (it->second == dscp) {
+      return;
+    }
+
+    const bool cur_has_rate = dscp_has_qos_rate_target_locked(it->second);
+    if (pdu_len > 0 && pdu_len < DSCP_MAPPER_MIN_PDU_LEN && cur_has_rate && !new_has_rate) {
+      return;
+    }
+
     ue_dscp_map[ue_index] = dscp;
   }
   
@@ -221,14 +251,14 @@ private:
   dscp_qos_mapper(const dscp_qos_mapper&) = delete;
   dscp_qos_mapper& operator=(const dscp_qos_mapper&) = delete;
 
-  /// \brief DSCP profile table: GBR 20 Mbps, DC-GBR 15 Mbps (MBR = GBR). non-GBR has no rate target.
+  /// \brief DSCP profile table: GBR 7 Mbps, DC-GBR 5 Mbps (MBR = GBR). non-GBR has no rate target.
   static const std::map<uint8_t, dscp_qos_profile>& get_dscp_qos_profile_table()
   {
-    static const dscp_qos_rate_target gbr_rates{20'000'000, 20'000'000};
-    static const dscp_qos_rate_target dc_gbr_rates{15'000'000, 15'000'000};
+    static const dscp_qos_rate_target gbr_rates{DSCP_PROFILE_GBR_BPS, DSCP_PROFILE_GBR_BPS};
+    static const dscp_qos_rate_target dc_gbr_rates{DSCP_PROFILE_DC_GBR_BPS, DSCP_PROFILE_DC_GBR_BPS};
 
     static const std::map<uint8_t, dscp_qos_profile> profile_table = {
-        // GBR — 20 Mbps
+        // GBR — 7 Mbps
         {44, {uint_to_five_qi(66), gbr_rates}},
         {34, {uint_to_five_qi(2), gbr_rates}},
         {32, {uint_to_five_qi(3), gbr_rates}},
@@ -241,7 +271,7 @@ private:
         {0, {uint_to_five_qi(9), std::nullopt}},
         {30, {uint_to_five_qi(70), std::nullopt}},
         {24, {uint_to_five_qi(80), std::nullopt}},
-        // Delay-critical GBR — 15 Mbps
+        // Delay-critical GBR — 5 Mbps
         {17, {uint_to_five_qi(82), dc_gbr_rates}},
         {16, {uint_to_five_qi(83), dc_gbr_rates}},
         {15, {uint_to_five_qi(84), dc_gbr_rates}},
@@ -283,6 +313,16 @@ private:
     return {};
   }
 
+  bool dscp_has_qos_rate_target_locked(uint8_t dscp) const
+  {
+    const auto explicit_rate_it = dscp_to_qos_rate_map.find(dscp);
+    if (explicit_rate_it != dscp_to_qos_rate_map.end()) {
+      return explicit_rate_it->second.gbr_bps > 0 || explicit_rate_it->second.mbr_bps > 0;
+    }
+    const std::optional<dscp_qos_profile> profile = resolve_dscp_profile_locked(dscp);
+    return profile.has_value() && profile->rates.has_value();
+  }
+
   mutable std::mutex                          mutex;
   std::unordered_map<uint32_t, uint8_t>      ue_dscp_map;          ///< UE index -> DSCP mapping
   std::unordered_map<uint32_t, unsigned>     ue_runtime_pdb_map;   ///< UE index -> runtime PDB (ms)
@@ -291,6 +331,7 @@ private:
 };
 
 } // namespace srsran
+
 
 
 

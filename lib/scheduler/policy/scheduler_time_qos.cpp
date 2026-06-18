@@ -132,8 +132,7 @@ static constexpr double max_metric_weight = 1.0e12;
 // [Implementation-defined] Averaging window for GBR rate weights (matches dl_logical_channel_manager).
 static constexpr unsigned QOS_RATE_AVG_WINDOW_MS = 300;
 
-// 15M DC-GBR / 20M GBR: TBS-level air cap. non-GBR has no token bucket.
-static constexpr uint64_t DL_AIR_TBS_CAP_MIN_GBR_BPS = 14'000'000;
+// 5M DC-GBR / 7M GBR: TBS-level air cap. non-GBR has no token bucket.
 
 /// Tracking weight: boost below GBR, neutral between GBR and MBR, penalty above MBR.
 static double compute_tracking_rate_weight(double gbr_bps, double mbr_bps, double avg_rate)
@@ -269,7 +268,13 @@ static double compute_dl_qos_weights(const slice_ue&                  u,
       const double dl_avg_rate = u.dl_avg_bit_rate(lc->lcid);
 
       if (dl_avg_rate != 0) {
-        gbr_weight += compute_tracking_rate_weight(gbr_bps, mbr_bps, dl_avg_rate);
+        // Air TBS cap enforces GFBR/MBR on the wire. When avg meets target, skip MBR penalty (0.35x) that
+        // would starve the UE and let the RLC queue diverge under overload input (e.g. iperf 10M vs 7M cap).
+        if (u.dl_air_rate_cap_enabled() and dl_avg_rate >= gbr_bps) {
+          gbr_weight += 1.0;
+        } else {
+          gbr_weight += compute_tracking_rate_weight(gbr_bps, mbr_bps, dl_avg_rate);
+        }
       } else {
         static srslog::basic_logger& logger = srslog::fetch_basic_logger("SCHED");
         logger.warning("[RATE-ZERO] UE{} LCID{} dl_avg_rate=0! dscp_gbr={} dscp_mbr={}",
@@ -751,6 +756,7 @@ void scheduler_time_qos::ue_ctxt::save_ul_alloc(unsigned alloc_bytes)
   }
   ul_sum_alloc_bytes += alloc_bytes;
 }
+
 
 
 
