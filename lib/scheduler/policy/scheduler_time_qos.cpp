@@ -60,8 +60,30 @@ static uint64_t dscp_gbr_rate_bps_for_history(uint8_t dscp)
   return rates.has_value() ? rates->gbr_bps : 0;
 }
 
+namespace {
+
+time_qos_scheduler_config make_gbr_prioritized_qos_policy(const scheduler_ue_expert_config& expert_cfg_)
+{
+  time_qos_scheduler_config cfg = std::get<time_qos_scheduler_config>(expert_cfg_.policy_cfg);
+  cfg.combine_function          = time_qos_scheduler_config::combine_function_type::gbr_prioritized;
+  return cfg;
+}
+
+double apply_gbr_prioritized_pf_floor(double                           pf_weight,
+                                      double                           gbr_weight,
+                                      const time_qos_scheduler_config& policy_params)
+{
+  if (policy_params.combine_function == time_qos_scheduler_config::combine_function_type::gbr_prioritized and
+      gbr_weight > 1.0) {
+    return std::max(1.0, pf_weight);
+  }
+  return pf_weight;
+}
+
+} // namespace
+
 scheduler_time_qos::scheduler_time_qos(const scheduler_ue_expert_config& expert_cfg_, du_cell_index_t cell_index_) :
-  params(std::get<time_qos_scheduler_config>(expert_cfg_.policy_cfg)),
+  params(make_gbr_prioritized_qos_policy(expert_cfg_)),
   cell_index(cell_index_)
 {
 }
@@ -134,24 +156,6 @@ static constexpr unsigned QOS_RATE_AVG_WINDOW_MS = 300;
 
 // 5M DC-GBR / 7M GBR: TBS-level air cap. non-GBR has no token bucket.
 
-/// Tracking weight: boost below GBR, neutral between GBR and MBR, penalty above MBR.
-static double compute_tracking_rate_weight(double gbr_bps, double mbr_bps, double avg_rate)
-{
-  static constexpr double GBR_UNDER_TARGET_BOOST  = 2.0;
-  static constexpr double MBR_OVER_TARGET_PENALTY = 0.35;
-
-  if (avg_rate <= 0) {
-    return max_metric_weight;
-  }
-  if (avg_rate < gbr_bps) {
-    return std::max(GBR_UNDER_TARGET_BOOST, std::min(gbr_bps / avg_rate, max_metric_weight));
-  }
-  if (avg_rate >= mbr_bps) {
-    return MBR_OVER_TARGET_PENALTY;
-  }
-  return 1.0;
-}
-
 static double compute_pf_metric(double estim_rate, double avg_rate, double fairness_coeff)
 {
   double pf_weight = 0.0;
@@ -179,11 +183,7 @@ static double combine_qos_metrics(double                           pf_weight,
                                   double                           delay_weight,
                                   const time_qos_scheduler_config& policy_params)
 {
-  if (policy_params.combine_function == time_qos_scheduler_config::combine_function_type::gbr_prioritized and
-      gbr_weight > 1.0) {
-    // GBR target has not been met and we prioritize GBR over PF.
-    pf_weight = std::max(1.0, pf_weight);
-  }
+  pf_weight = apply_gbr_prioritized_pf_floor(pf_weight, gbr_weight, policy_params);
 
   // Log QoS metrics for debugging
   static auto& logger = srslog::fetch_basic_logger("SCHED", false);
@@ -264,24 +264,18 @@ static double compute_dl_qos_weights(const slice_ue&                  u,
       }
 
       const double gbr_bps     = static_cast<double>(rates->gbr_bps);
-      const double mbr_bps     = static_cast<double>(rates->mbr_bps);
       const double dl_avg_rate = u.dl_avg_bit_rate(lc->lcid);
 
       if (dl_avg_rate != 0) {
-        // Air TBS cap enforces GFBR/MBR on the wire. When avg meets target, skip MBR penalty (0.35x) that
-        // would starve the UE and let the RLC queue diverge under overload input (e.g. iperf 10M vs 7M cap).
-        if (u.dl_air_rate_cap_enabled() and dl_avg_rate >= gbr_bps) {
-          gbr_weight += 1.0;
-        } else {
-          gbr_weight += compute_tracking_rate_weight(gbr_bps, mbr_bps, dl_avg_rate);
-        }
+        // Boost when avg < GBR; floor at 1.0 when avg >= GBR (never below non-GBR).
+        gbr_weight += std::max(1.0, std::min(gbr_bps / dl_avg_rate, max_metric_weight));
       } else {
         static srslog::basic_logger& logger = srslog::fetch_basic_logger("SCHED");
         logger.warning("[RATE-ZERO] UE{} LCID{} dl_avg_rate=0! dscp_gbr={} dscp_mbr={}",
                        u.ue_index(),
                        static_cast<unsigned>(lc->lcid),
                        gbr_bps,
-                       mbr_bps);
+                       static_cast<double>(rates->mbr_bps));
         gbr_weight += max_metric_weight;
       }
     }
@@ -296,13 +290,14 @@ static double compute_dl_qos_weights(const slice_ue&                  u,
   gbr_weight   = policy_params.gbr_enabled and gbr_weight != 0 ? gbr_weight : 1.0;
   delay_weight = policy_params.pdb_enabled and delay_weight != 0 ? delay_weight : 1.0;
 
-  double pf_weight = compute_pf_metric(estim_dl_rate, avg_dl_rate, policy_params.pf_fairness_coeff);
+  const double pf_weight_raw = compute_pf_metric(estim_dl_rate, avg_dl_rate, policy_params.pf_fairness_coeff);
+  const double pf_weight     = apply_gbr_prioritized_pf_floor(pf_weight_raw, gbr_weight, policy_params);
 
   double prio_weight = policy_params.priority_enabled ? (max_combined_prio_level + 1 - min_combined_prio) /
                                                             static_cast<double>(max_combined_prio_level + 1)
                                                       : 1.0;
 
-  double final_priority = combine_qos_metrics(pf_weight, gbr_weight, prio_weight, delay_weight, policy_params);
+  double final_priority = combine_qos_metrics(pf_weight_raw, gbr_weight, prio_weight, delay_weight, policy_params);
 
   static srslog::basic_logger& logger = srslog::fetch_basic_logger("SCHED");
   logger.info("DL Priority calc: UE{} min_combined_prio={}, prio_weight={:.3f}, pf_weight={:.3f}, gbr_weight={:.3f}, "
@@ -419,11 +414,10 @@ static double compute_ul_qos_weights(const slice_ue&                  u,
       }
 
       const double gbr_bps = static_cast<double>(rates->gbr_bps);
-      const double mbr_bps = static_cast<double>(rates->mbr_bps);
       lcg_id_t     lcg_id  = u.get_lcg_id(lc->lcid);
       const double ul_rate = u.ul_avg_bit_rate(lcg_id);
       if (ul_rate != 0) {
-        gbr_weight += compute_tracking_rate_weight(gbr_bps, mbr_bps, ul_rate);
+        gbr_weight += std::max(1.0, std::min(gbr_bps / ul_rate, max_metric_weight));
       } else {
         gbr_weight = max_metric_weight;
       }
