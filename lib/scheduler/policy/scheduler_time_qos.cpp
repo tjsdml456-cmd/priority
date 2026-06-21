@@ -25,8 +25,8 @@
 #include "../support/csi_report_helpers.h"
 #include "../ue_scheduling/grant_params_selector.h"
 #include "srsran/ran/qos/five_qi_qos_mapping.h"
+#include "srsran/ran/qos/five_qi.h"
 #include "srsran/ran/qos/qos_parameters.h"
-#include "srsran/rlc/rlc_runtime_pdb_cache.h"
 #include "srsran/sdap/dscp_qos_mapper.h"
 #include "srsran/srslog/srslog.h"
 #include <algorithm>
@@ -525,9 +525,6 @@ void scheduler_time_qos::ue_ctxt::apply_5qi_based_runtime_overrides(const slice_
     }
     lc->qos->set_runtime_qos(runtime_qos);
 
-    mapper.set_runtime_pdb_for_ue(static_cast<uint32_t>(ue_index), effective_pdb);
-    cache_rlc_ue_runtime_pdb_ms(static_cast<uint32_t>(ue_index), effective_pdb);
-
     if (ue_dscp.has_value()) {
       if (qos_res_type_uses_gbr_rate_target(runtime_qos.res_type)) {
         if (const std::optional<dscp_qos_rate_target> rates = mapper.map_dscp_to_qos_rates(ue_dscp.value())) {
@@ -561,6 +558,15 @@ void scheduler_time_qos::ue_ctxt::apply_5qi_based_runtime_overrides(const slice_
                                                 : "non-GBR")
                                        : old_res_type_str;
     if (effective_5qi != lc->qos->five_qi) {
+      logger.info("[QOS-RECONFIG] path=dscp UE{} LCID{} five_qi={}->{} priority={}->{} pdb_ms={}->{}",
+                  ue_index,
+                  static_cast<unsigned>(lc->lcid),
+                  five_qi_to_uint(lc->qos->five_qi),
+                  five_qi_to_uint(effective_5qi),
+                  old_priority.value(),
+                  effective_priority.value(),
+                  old_pdb,
+                  effective_pdb);
       logger.info("[STEP6-SCHED] QoS 업데이트 (DSCP 기반) - UE{} LCID{} 5QI={}->{} Priority={}->{} PDB={}->{}ms "
                   "Type={}->{} (ARP={})",
                   ue_index,
