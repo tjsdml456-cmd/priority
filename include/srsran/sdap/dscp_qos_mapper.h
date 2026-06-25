@@ -32,15 +32,15 @@
 
 namespace srsran {
 
-/// DSCP-profile GBR targets (bps). MBR equals GBR for each profile.
-inline constexpr uint64_t DSCP_PROFILE_GBR_BPS    = 7'000'000;
-inline constexpr uint64_t DSCP_PROFILE_DC_GBR_BPS = 5'000'000;
-/// GBR/DC-GBR flows at or above this rate use TBS-level air cap (token bucket + per-grant TBS limit).
-inline constexpr uint64_t DL_AIR_TBS_CAP_MIN_GBR_BPS = DSCP_PROFILE_DC_GBR_BPS;
+/// DSCP-profile GBR/MBR targets (bps).
+inline constexpr uint64_t DSCP_PROFILE_GBR_BPS     = 7'000'000;
+inline constexpr uint64_t DSCP_PROFILE_GBR_MBR_BPS = 9'000'000;
+inline constexpr uint64_t DSCP_PROFILE_DC_GBR_BPS  = 4'000'000;
+inline constexpr uint64_t DSCP_PROFILE_DC_MBR_BPS  = 6'000'000;
 /// SDAP-observed IPv4 PDUs below this size must not seed or downgrade an active GBR/DC-GBR profile.
 inline constexpr unsigned DSCP_MAPPER_MIN_PDU_LEN = 128;
 
-/// GFBR/MFBR / scheduler rate targets per DSCP profile (GBR 7M, DC-GBR 5M; MBR = GBR).
+/// GFBR/MFBR / scheduler rate targets per DSCP profile (GBR 7M/9M, DC-GBR 4M/6M).
 struct dscp_qos_rate_target {
   uint64_t gbr_bps = 0;
   uint64_t mbr_bps = 0;
@@ -234,11 +234,11 @@ private:
   dscp_qos_mapper(const dscp_qos_mapper&) = delete;
   dscp_qos_mapper& operator=(const dscp_qos_mapper&) = delete;
 
-  /// \brief DSCP profile table: GBR 7 Mbps, DC-GBR 5 Mbps (MBR = GBR). non-GBR has no rate target.
+  /// \brief DSCP profile table: GBR 7/9 Mbps, DC-GBR 4/6 Mbps. non-GBR has no rate target.
   static const std::map<uint8_t, dscp_qos_profile>& get_dscp_qos_profile_table()
   {
-    static const dscp_qos_rate_target gbr_rates{DSCP_PROFILE_GBR_BPS, DSCP_PROFILE_GBR_BPS};
-    static const dscp_qos_rate_target dc_gbr_rates{DSCP_PROFILE_DC_GBR_BPS, DSCP_PROFILE_DC_GBR_BPS};
+    static const dscp_qos_rate_target gbr_rates{DSCP_PROFILE_GBR_BPS, DSCP_PROFILE_GBR_MBR_BPS};
+    static const dscp_qos_rate_target dc_gbr_rates{DSCP_PROFILE_DC_GBR_BPS, DSCP_PROFILE_DC_MBR_BPS};
 
     static const std::map<uint8_t, dscp_qos_profile> profile_table = {
         // GBR — 7 Mbps
@@ -253,8 +253,8 @@ private:
         {22, {uint_to_five_qi(7), std::nullopt}},
         {0, {uint_to_five_qi(9), std::nullopt}},
         {30, {uint_to_five_qi(70), std::nullopt}},
-        {24, {uint_to_five_qi(80), std::nullopt}},
-        // Delay-critical GBR — 5 Mbps
+        {24, {uint_to_five_qi(8), std::nullopt}},
+        // Delay-critical GBR — 4 Mbps GBR / 6 Mbps MBR
         {17, {uint_to_five_qi(82), dc_gbr_rates}},
         {16, {uint_to_five_qi(83), dc_gbr_rates}},
         {15, {uint_to_five_qi(84), dc_gbr_rates}},
@@ -313,6 +313,7 @@ private:
 };
 
 } // namespace srsran
+
 
 
 

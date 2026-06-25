@@ -24,7 +24,6 @@
 
 #include "../ue_context/ue.h"
 #include "srsran/adt/slotted_array.h"
-#include <limits>
 
 namespace srsran {
 
@@ -92,8 +91,17 @@ public:
   /// \brief Returns whether a SR indication handling is pending.
   bool has_pending_sr() const { return u.ul_logical_channels().has_pending_sr(); }
 
+  /// Slot at which the SR was received or invalid slot if no SR is pending.
+  slot_point pending_sr_slot_rx() const { return u.ul_logical_channels().pending_sr_slot_rx(); }
+
   /// Get QoS information of DRBs configured for the UE.
   logical_channel_config_list_ptr logical_channels() const { return u.ue_cfg_dedicated()->logical_channels(); }
+
+  /// \brief Consume a one-shot "QoS update -> first UL grant" flag for the given LCG.
+  bool consume_first_ul_grant_after_qos_change(lcg_id_t lcg_id)
+  {
+    return u.ul_logical_channels().consume_first_ul_grant_after_qos_change(lcg_id);
+  }
 
   /// Average DL bit rate, in bps, for a given UE logical channel.
   double dl_avg_bit_rate(lcid_t lcid) const
@@ -111,43 +119,6 @@ public:
   slot_point dl_hol_toa(lcid_t lcid) const
   {
     return contains(lcid) ? u.dl_logical_channels().hol_toa(lcid) : slot_point{};
-  }
-
-  /// Push DSCP-derived GBR/MBR into the DL MAC token bucket for this LC.
-  void set_dl_token_rates(lcid_t lcid, uint64_t gbr_bps, uint64_t mbr_bps, bool air_rate_cap = false) const
-  {
-    u.dl_logical_channels().set_token_rates(lcid, gbr_bps, mbr_bps, air_rate_cap);
-  }
-
-  /// True when GBR token bucket is empty for pending DRB data in this slice (defer DL scheduling this slot).
-  bool dl_token_throttled() const { return u.dl_logical_channels().is_token_throttled(slice_id); }
-
-  /// Available GBR token bytes for \c lcid in this slice (no limit when non-GBR or LC not in slice).
-  unsigned get_dl_token_budget(lcid_t lcid) const
-  {
-    return contains(lcid) ? u.dl_logical_channels().get_dl_token_budget(lcid)
-                          : std::numeric_limits<unsigned>::max();
-  }
-
-  /// Max newTx DL grant size for this slice (pending bytes with GBR LCs capped by token).
-  unsigned dl_grant_byte_budget() const { return u.dl_logical_channels().get_dl_grant_byte_budget(slice_id); }
-
-  /// True when GBR/DC-GBR air-interface TBS cap is active for this slice.
-  bool dl_air_rate_cap_enabled() const { return u.dl_logical_channels().dl_air_rate_cap_enabled(slice_id); }
-
-  /// Per-slot GBR grant byte cap for GBR/DC-GBR air rate limiting.
-  unsigned dl_gbr_air_cap_grant_bytes() const
-  {
-    return u.dl_logical_channels().get_dl_gbr_air_cap_grant_bytes(slice_id);
-  }
-
-  /// Clear DRB moving-average rate history (e.g. on DSCP / rate profile change).
-  void reset_dl_rate_averages() const { u.dl_logical_channels().reset_drbs_rate_averages(); }
-
-  /// Debit GBR/DC-GBR token by committed newTx TBS.
-  void debit_dl_grant_tokens(unsigned tbs_bytes) const
-  {
-    u.dl_logical_channels().debit_dl_grant_tokens(slice_id, tbs_bytes);
   }
 
 private:
@@ -207,4 +178,5 @@ private:
 };
 
 } // namespace srsran
+
 

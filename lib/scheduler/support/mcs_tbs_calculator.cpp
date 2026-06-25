@@ -34,6 +34,16 @@ using namespace srsran;
 
 static constexpr unsigned NOF_BITS_PER_BYTE = 8U;
 
+// Skip grant when DM-RS/overhead leaves zero DL-SCH REs (avoids assert in get_effective_code_rate).
+static std::optional<float> try_get_dl_effective_code_rate(const dlsch_configuration& cfg)
+{
+  const dlsch_information info = get_dlsch_information(cfg);
+  if (info.nof_dl_sch_bits.value() == 0) {
+    return std::nullopt;
+  }
+  return info.get_effective_code_rate();
+}
+
 // Helper that generates the ulsch_configuration object necessary to compute the Effective Code Rate.
 static ulsch_configuration build_ulsch_info(const pusch_config_params& pusch_cfg,
                                             const bwp_config&          active_bwp_cfg,
@@ -260,7 +270,12 @@ std::optional<sch_mcs_tbs> srsran::compute_dl_mcs_tbs(const pdsch_config_params&
                                  .nof_layers  = pdsch_params.nof_layers,
                                  .contains_dc = contains_dc};
 
-  float effective_code_rate = get_dlsch_information(dlsch_info).get_effective_code_rate();
+  float effective_code_rate = 0.0F;
+  if (auto effective_code_rate_opt = try_get_dl_effective_code_rate(dlsch_info)) {
+    effective_code_rate = effective_code_rate_opt.value();
+  } else {
+    return std::nullopt;
+  }
 
   // > Decrease the MCS and recompute TBS until the effective code rate is not above the 0.95 threshold.
   sch_mcs_index mcs = max_mcs;
@@ -281,7 +296,12 @@ std::optional<sch_mcs_tbs> srsran::compute_dl_mcs_tbs(const pdsch_config_params&
     if (tbs_bits == 0) {
       break;
     }
-    effective_code_rate = get_dlsch_information(dlsch_info).get_effective_code_rate();
+    auto effective_code_rate_opt = try_get_dl_effective_code_rate(dlsch_info);
+    if (not effective_code_rate_opt.has_value()) {
+      tbs_bits = 0;
+      break;
+    }
+    effective_code_rate = effective_code_rate_opt.value();
   }
 
   // If no MCS such that effective code rate <= 0.95, return an empty optional object.
@@ -425,4 +445,5 @@ unsigned srsran::compute_ul_tbs_unsafe(const pusch_config_params& pusch_cfg, sch
                                                                .n_prb            = nof_prbs}) /
          NOF_BITS_PER_BYTE;
 }
+
 

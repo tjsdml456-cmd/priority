@@ -147,11 +147,11 @@ public:
     return is_active(lcid) ? get_mac_sdu_required_bytes(channels[lcid].buf_st) : 0;
   }
 
-  /// \brief Average bit rate, in bps, for a given LCID.
+  /// \brief Average delivered bit rate, in bps, for a given LCID (MAC SDU payload, time-windowed).
   double average_bit_rate(lcid_t lcid) const
   {
-    return not is_srb(lcid) and is_active(lcid) and channels[lcid].avg_bytes_per_slot.size() > 0
-               ? channels[lcid].avg_bytes_per_slot.average() * 8 * slots_per_sec
+    return not is_srb(lcid) and is_active(lcid) and channels[lcid].track_delivered_rate
+               ? channels[lcid].delivered_rate.average_bps()
                : 0.0;
   }
 
@@ -190,40 +190,24 @@ public:
   /// \brief Returns a list of LCIDs sorted based on decreasing order of priority.
   span<const lcid_t> get_prioritized_logical_channels() const { return sorted_channels; }
 
-  /// \brief Configure per-LC token bucket rates (GBR/MBR in bps). GBR=0 disables token limiting (non-GBR).
-  /// \param air_rate_cap When true (GBR/DC-GBR), enforce per-slot TBS cap + TBS-based token debit at grant time.
-  void set_token_rates(lcid_t lcid, uint64_t gbr_bps, uint64_t mbr_bps, bool air_rate_cap = false);
-
-  /// \brief True if a GBR logical channel in \c slice_id has pending data but token is below \c MIN_TOKEN_TO_SCHED.
-  bool is_token_throttled(ran_slice_id_t slice_id) const;
-
-  /// \brief Available GBR token bytes for \c lcid (no limit when non-GBR).
-  unsigned get_dl_token_budget(lcid_t lcid) const;
-
-  /// \brief True if any LC in \c slice_id uses GBR/DC-GBR air-interface TBS rate cap.
-  bool dl_air_rate_cap_enabled(ran_slice_id_t slice_id) const;
-
-  /// \brief Max newTx grant bytes for GBR/DC-GBR air cap (one slot of GBR refill). UINT_MAX when disabled.
-  unsigned get_dl_gbr_air_cap_grant_bytes(ran_slice_id_t slice_id) const;
-
-  /// \brief Max newTx DL grant size for \c slice_id: pending bytes with GBR LCs capped by token balance.
-  unsigned get_dl_grant_byte_budget(ran_slice_id_t slice_id) const;
-
-  /// \brief Reset DRB per-LC rate moving averages (after DSCP / scheduler rate profile change).
+  /// \brief Reset DRB per-LC rate trackers (after DSCP / scheduler rate profile change).
   void reset_drbs_rate_averages();
 
-  /// \brief Debit GBR/DC-GBR token by committed newTx TBS (Throughput calc on HARQ ACK).
-  void debit_dl_grant_tokens(ran_slice_id_t slice_id, unsigned tbs_bytes);
+  /// Resize per-LC rate window and MFBR state to match configured/runtime QoS.
+  void apply_lc_rate_avg_window(lcid_t lcid);
 
 private:
-  /// Refresh tb_gbr/tb_mbr on a channel from runtime_gbr_qos_info in channel_configs.
-  void sync_lc_token_rates_from_config(lcid_t lcid);
   struct channel_context : public intrusive_double_linked_list_element<> {
     /// Whether the configured logical channel is currently active.
     bool active = false;
     /// DL Buffer status of this logical channel.
     unsigned buf_st = 0;
-    /// Bytes-per-slot average for this logical channel.
+    /// Delivered MAC SDU payload throughput tracker for GBR gbr_weight (time-windowed).
+    lc_dl_delivered_rate_tracker delivered_rate;
+    bool                         track_delivered_rate = false;
+    /// Cached MFBR (max_br_dl) for fixed-window policing at MAC grant time. Zero disables policing.
+    uint64_t mbr_bps = 0;
+    /// Legacy bytes-per-slot ring (window sizing hooks only).
     moving_averager<unsigned> avg_bytes_per_slot;
     /// Current slot sched bytes.
     unsigned last_sched_bytes = 0;
@@ -231,14 +215,6 @@ private:
     slot_point hol_toa;
     /// Slice associated with this channel.
     std::optional<ran_slice_id_t> slice_id;
-    /// Token bucket balance (bytes) for GBR rate enforcement.
-    double token_bytes = 0.0;
-    /// Token refill rate (bps) from current DSCP profile.
-    uint64_t tb_gbr_bps = 0;
-    /// Token bucket cap reference (bps) from current DSCP profile.
-    uint64_t tb_mbr_bps = 0;
-    /// When true (GBR/DC-GBR): per-slot TBS cap + grant-time token debit; non-GBR keeps MAC SDU token path.
-    bool air_rate_cap = false;
 
     void reset();
   };
@@ -276,7 +252,7 @@ private:
 
   const du_ue_index_t ue_index;
 
-  /// Per-UE shaped MAC SDU payload throughput (post token bucket).
+  /// Per-UE DL MAC SDU payload throughput tracker (measurement only).
   dl_mac_shaped_thp_tracker shaped_thp_tracker;
 };
 
@@ -326,5 +302,6 @@ unsigned build_dl_transport_block_info(dl_msg_tb_info&             tb_info,
                                        ran_slice_id_t              slice_id);
 
 } // namespace srsran
+
 
 

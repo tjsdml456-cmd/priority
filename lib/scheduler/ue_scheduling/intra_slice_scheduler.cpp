@@ -23,6 +23,7 @@
 #include "intra_slice_scheduler.h"
 #include "../logging/scheduler_metrics_handler.h"
 #include "srsran/ran/pdcch/search_space.h"
+#include "srsran/ran/qos/five_qi.h"
 #include "srsran/sdap/dscp_qos_mapper.h"
 #include "srsran/support/math/mod_math_utils.h"
 #include <chrono>
@@ -674,7 +675,7 @@ unsigned intra_slice_scheduler::schedule_ul_newtx_candidates(ul_ran_slice_candid
 
   // Update policy with allocation results.
   const auto& puschs = cell_alloc[pusch_slot].result.ul.puschs;
-  // Log UL grant decision time (for UL delay correlation).
+  // Log UL grant decision time (for UL delay correlation) and UE 5QI at grant time.
   {
     const auto t_us = std::chrono::duration_cast<std::chrono::microseconds>(
                           std::chrono::steady_clock::now().time_since_epoch())
@@ -684,16 +685,79 @@ unsigned intra_slice_scheduler::schedule_ul_newtx_candidates(ul_ran_slice_candid
       const int prb_start = grant.pusch_cfg.rbs.is_type1() ? static_cast<int>(grant.pusch_cfg.rbs.type1().start()) : -1;
       const int prb_stop  = grant.pusch_cfg.rbs.is_type1() ? static_cast<int>(grant.pusch_cfg.rbs.type1().stop()) : -1;
       const int nof_prb   = grant.pusch_cfg.rbs.is_type1() ? static_cast<int>(grant.pusch_cfg.rbs.type1().length()) : -1;
+
+      const slice_ue&          ue_in_slice = slice.get_slice_ues()[grant.context.ue_index];
+      const auto               lc_chs      = ue_in_slice.logical_channels();
+      lcg_id_t                 best_lcg_id   = lcg_id_t::LCG_ID_INVALID;
+      lcid_t                   best_lcid     = lcid_t::INVALID_LCID;
+      unsigned                 best_lcg_bytes = 0;
+      std::optional<five_qi_t> best_fiveqi_opt;
+
+      if (lc_chs.has_value()) {
+        const auto dscp_opt = dscp_qos_mapper::get_instance().get_dscp_for_ue(fmt::underlying(grant.context.ue_index));
+        if (dscp_opt.has_value()) {
+          best_fiveqi_opt = dscp_qos_mapper::get_instance().map_dscp_to_5qi(dscp_opt.value());
+        }
+        for (const auto& lc_cfg_ptr : *lc_chs) {
+          const auto& lc_cfg = lc_cfg_ptr.value();
+          if (not lc_cfg.qos.has_value()) {
+            continue;
+          }
+
+          const lcg_id_t lcg_id        = lc_cfg.lc_group;
+          const unsigned pending_bytes = ue_in_slice.pending_ul_unacked_bytes(lcg_id);
+          if (pending_bytes <= best_lcg_bytes) {
+            continue;
+          }
+
+          best_lcg_bytes  = pending_bytes;
+          best_lcg_id     = lcg_id;
+          best_lcid       = lc_cfg.lcid;
+          if (not best_fiveqi_opt.has_value() and lc_cfg.qos->five_qi != five_qi_t::invalid) {
+            best_fiveqi_opt = lc_cfg.qos->five_qi;
+          }
+        }
+      }
+
+      const int fiveqi_val = best_fiveqi_opt.has_value() ? static_cast<int>(best_fiveqi_opt.value()) : -1;
+
+      const bool first_grant_after_qos_change =
+          const_cast<slice_ue&>(ue_in_slice).consume_first_ul_grant_after_qos_change(best_lcg_id);
+      if (first_grant_after_qos_change) {
+        logger.info("[QoS-MODIFY] [FIRST-GRANT-UL] t_us={} slot_tx={} pusch_slot={} ue={} rnti={} 5qi={} lcg={} lcid={} "
+                    "pending_lcg_bytes={} tb_size={} rbs={} prb=[{},{}] nof_prb={} sym=[{},{}] mcs={} k2={} nof_retxs={}",
+                    t_us,
+                    slice.get_slot_tx(),
+                    pusch_slot,
+                    fmt::underlying(grant.context.ue_index),
+                    grant.pusch_cfg.rnti,
+                    fiveqi_val,
+                    static_cast<unsigned>(best_lcg_id),
+                    static_cast<unsigned>(best_lcid),
+                    best_lcg_bytes,
+                    grant.pusch_cfg.tb_size_bytes,
+                    grant.pusch_cfg.rbs,
+                    prb_start,
+                    prb_stop,
+                    nof_prb,
+                    grant.pusch_cfg.symbols.start(),
+                    grant.pusch_cfg.symbols.stop(),
+                    grant.pusch_cfg.mcs_index,
+                    grant.context.k2,
+                    grant.context.nof_retxs);
+      }
+
       const auto dscp_opt = dscp_qos_mapper::get_instance().get_dscp_for_ue(fmt::underlying(grant.context.ue_index));
       logger.info(
-          "[UL-GRANT] t_us={} slot_tx={} pusch_slot={} ue={} rnti={} dscp={} tb_size={} rbs={} prb=[{},{}] nof_prb={} "
-          "sym=[{},{}] mcs={} k2={} nof_retxs={}",
+          "[UL-GRANT] t_us={} slot_tx={} pusch_slot={} ue={} rnti={} dscp={} 5qi={} tb_size={} rbs={} prb=[{},{}] "
+          "nof_prb={} sym=[{},{}] mcs={} k2={} nof_retxs={}",
           t_us,
           slice.get_slot_tx(),
           pusch_slot,
           fmt::underlying(grant.context.ue_index),
           grant.pusch_cfg.rnti,
           dscp_opt.has_value() ? static_cast<int>(dscp_opt.value()) : -1,
+          fiveqi_val,
           grant.pusch_cfg.tb_size_bytes,
           grant.pusch_cfg.rbs,
           prb_start,
@@ -930,4 +994,5 @@ void intra_slice_scheduler::update_used_ul_vrbs(const ul_ran_slice_candidate& sl
                      .ul_res_grid.used_prbs(init_ul_bwp.generic_params.scs, ul_crb_lims, symbols_to_check)
                      .convert_to<vrb_bitmap>();
 }
+
 
