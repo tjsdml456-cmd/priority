@@ -34,9 +34,9 @@ namespace srsran {
 
 /// DSCP-profile GBR/MBR targets (bps).
 inline constexpr uint64_t DSCP_PROFILE_GBR_BPS     = 7'000'000;
-inline constexpr uint64_t DSCP_PROFILE_GBR_MBR_BPS = 9'000'000;
+inline constexpr uint64_t DSCP_PROFILE_GBR_MBR_BPS = 7'500'000;
 inline constexpr uint64_t DSCP_PROFILE_DC_GBR_BPS  = 4'000'000;
-inline constexpr uint64_t DSCP_PROFILE_DC_MBR_BPS  = 6'000'000;
+inline constexpr uint64_t DSCP_PROFILE_DC_MBR_BPS  = 4'500'000;
 /// SDAP-observed IPv4 PDUs below this size must not seed or downgrade an active GBR/DC-GBR profile.
 inline constexpr unsigned DSCP_MAPPER_MIN_PDU_LEN = 128;
 
@@ -253,7 +253,7 @@ private:
         {22, {uint_to_five_qi(7), std::nullopt}},
         {0, {uint_to_five_qi(9), std::nullopt}},
         {30, {uint_to_five_qi(70), std::nullopt}},
-        {24, {uint_to_five_qi(8), std::nullopt}},
+        {24, {uint_to_five_qi(80), std::nullopt}},
         // Delay-critical GBR — 4 Mbps GBR / 6 Mbps MBR
         {17, {uint_to_five_qi(82), dc_gbr_rates}},
         {16, {uint_to_five_qi(83), dc_gbr_rates}},
