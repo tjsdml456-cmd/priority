@@ -57,7 +57,10 @@ static constexpr unsigned MAX_CES_PER_UE = 5;
 static constexpr unsigned MAX_PENDING_CES = MAX_NOF_DU_UES * MAX_CES_PER_UE;
 
 // GBR gbr_weight and MFBR policer share this window (MFBR policing at MAC grant time).
-static constexpr unsigned GBR_RATE_AVG_WINDOW_MS = 300;
+static constexpr unsigned GBR_RATE_AVG_WINDOW_MS = 2000;
+
+// MFBR (max_br_dl) policing at MAC SDU allocation. Set false to disable MBR cap.
+static constexpr bool MFBR_POLICING_ENABLED = false;
 
 static std::optional<unsigned> get_qos_rate_avg_window_msec(const logical_channel_config::qos_info& qos)
 {
@@ -72,6 +75,10 @@ static std::optional<unsigned> get_qos_rate_avg_window_msec(const logical_channe
 
 static void sync_lc_mbr_bps(uint64_t& mbr_bps_out, const logical_channel_config::qos_info& qos)
 {
+  if (not MFBR_POLICING_ENABLED) {
+    mbr_bps_out = 0;
+    return;
+  }
   const gbr_qos_flow_information* gbr = qos.runtime_gbr_qos_info.has_value()
                                             ? &qos.runtime_gbr_qos_info.value()
                                             : (qos.gbr_qos_info.has_value() ? &qos.gbr_qos_info.value() : nullptr);
@@ -686,6 +693,7 @@ unsigned srsran::build_dl_transport_block_info(dl_msg_tb_info&             tb_in
   }
   return total_subpdu_bytes;
 }
+
 
 
 

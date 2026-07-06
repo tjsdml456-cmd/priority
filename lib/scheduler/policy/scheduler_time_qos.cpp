@@ -46,31 +46,8 @@ static bool qos_res_type_uses_gbr_rate_target(qos_flow_resource_type res_type)
   return res_type == qos_flow_resource_type::gbr or res_type == qos_flow_resource_type::delay_critical_gbr;
 }
 
-namespace {
-
-time_qos_scheduler_config make_gbr_prioritized_qos_policy(const scheduler_ue_expert_config& expert_cfg_)
-{
-  time_qos_scheduler_config cfg = std::get<time_qos_scheduler_config>(expert_cfg_.policy_cfg);
-  cfg.combine_function          = time_qos_scheduler_config::combine_function_type::gbr_prioritized;
-  return cfg;
-}
-
-double apply_gbr_prioritized_pf_floor(double                           pf_weight,
-                                      double                           gbr_weight,
-                                      const time_qos_scheduler_config& policy_params)
-{
-  if (policy_params.combine_function == time_qos_scheduler_config::combine_function_type::gbr_prioritized and
-      gbr_weight > 1.0) {
-    return std::max(1.0, pf_weight);
-  }
-  return pf_weight;
-}
-
-} // namespace
-
 scheduler_time_qos::scheduler_time_qos(const scheduler_ue_expert_config& expert_cfg_, du_cell_index_t cell_index_) :
-  params(make_gbr_prioritized_qos_policy(expert_cfg_)),
-  cell_index(cell_index_)
+  params(std::get<time_qos_scheduler_config>(expert_cfg_.policy_cfg)), cell_index(cell_index_)
 {
 }
 
@@ -138,7 +115,7 @@ void scheduler_time_qos::save_ul_newtx_grants(span<const ul_sched_info> ul_grant
 static constexpr double max_metric_weight = 1.0e12;
 
 // [Implementation-defined] Averaging window for GBR rate weights (matches dl_logical_channel_manager).
-static constexpr unsigned QOS_RATE_AVG_WINDOW_MS = 300;
+static constexpr unsigned QOS_RATE_AVG_WINDOW_MS = 2000;
 
 // GBR 7M/9M, DC-GBR 4M/6M: MFBR policed at MAC SDU allocation. non-GBR has no rate cap.
 
@@ -169,7 +146,11 @@ static double combine_qos_metrics(double                           pf_weight,
                                   double                           delay_weight,
                                   const time_qos_scheduler_config& policy_params)
 {
-  pf_weight = apply_gbr_prioritized_pf_floor(pf_weight, gbr_weight, policy_params);
+  if (policy_params.combine_function == time_qos_scheduler_config::combine_function_type::gbr_prioritized and
+      gbr_weight > 1.0) {
+    // GBR target has not been met and we prioritize GBR over PF.
+    pf_weight = std::max(1.0, pf_weight);
+  }
 
   // Log QoS metrics for debugging
   static auto& logger = srslog::fetch_basic_logger("SCHED", false);
@@ -215,7 +196,14 @@ static double compute_dl_qos_weights(const slice_ue&                  u,
         const double   hol_delay_ms     = static_cast<double>(diff_slots) * slot_duration_ms;
         const unsigned pdb              = lc->qos->runtime_qos.packet_delay_budget_ms;
         double         delay_contrib    = hol_delay_ms / static_cast<double>(pdb);
+        
         delay_weight += delay_contrib;
+
+         if ( static_cast<double>(pdb) == 300 ) {
+          if ( delay_weight > 1.0 ) {
+            delay_weight = 1.0;
+          }
+        }
 
         logger.info("[DELAY-WEIGHT] UE{} LCID{} hol_toa={} slot_tx={} hol_delay_ms={:.3f} PDB={}ms delay_contrib={:.3f} "
                     "delay_weight={:.3f}",
@@ -255,7 +243,7 @@ static double compute_dl_qos_weights(const slice_ue&                  u,
     }
   }
 
-  gbr_weight = policy_params.gbr_enabled and gbr_weight != 0 ? gbr_weight : 1.0;
+  gbr_weight = (policy_params.gbr_enabled and gbr_weight != 0) ? std::max(gbr_weight, 1.0) : 1.0;
 
   if (avg_dl_rate == 0) {
     return std::numeric_limits<double>::max();
@@ -272,14 +260,13 @@ static double compute_dl_qos_weights(const slice_ue&                  u,
               : (not policy_params.pdb_enabled)                          ? "pdb_disabled"
                                                                          : "delay_weight_was_zero");
 
-  const double pf_weight_raw = compute_pf_metric(estim_dl_rate, avg_dl_rate, policy_params.pf_fairness_coeff);
-  const double pf_weight     = apply_gbr_prioritized_pf_floor(pf_weight_raw, gbr_weight, policy_params);
+  double pf_weight = compute_pf_metric(estim_dl_rate, avg_dl_rate, policy_params.pf_fairness_coeff);
 
   double prio_weight = policy_params.priority_enabled ? (max_combined_prio_level + 1 - min_combined_prio) /
                                                             static_cast<double>(max_combined_prio_level + 1)
                                                       : 1.0;
 
-  double final_priority = combine_qos_metrics(pf_weight_raw, gbr_weight, prio_weight, delay_weight, policy_params);
+  double final_priority = combine_qos_metrics(pf_weight, gbr_weight, prio_weight, delay_weight, policy_params);
 
   logger.info("DL Priority calc: UE{} min_combined_prio={}, prio_weight={:.3f}, pf_weight={:.3f}, gbr_weight={:.3f}, "
               "delay_weight={:.3f}, final_priority={:.3f}",
@@ -372,7 +359,7 @@ static double compute_ul_qos_weights(const slice_ue&                  u,
     }
   }
 
-  gbr_weight = policy_params.gbr_enabled and gbr_weight != 0 ? gbr_weight : 1.0;
+  gbr_weight = (policy_params.gbr_enabled and gbr_weight != 0) ? std::max(gbr_weight, 1.0) : 1.0;
   double prio_weight = policy_params.priority_enabled ? (max_combined_prio_level + 1 - min_combined_prio) /
                                                             static_cast<double>(max_combined_prio_level + 1)
                                                       : 1.0;
@@ -459,6 +446,7 @@ void scheduler_time_qos::ue_ctxt::apply_5qi_based_runtime_overrides(const slice_
         // non-GBR: DSCP→5QI/PDB/priority only — no runtime GBR.
         lc->qos->runtime_gbr_qos_info.reset();
       }
+      u.apply_dl_lc_rate_avg_window(lc->lcid);
     }
     // No DSCP for this UE yet: keep prior runtime_gbr_qos_info.
 
@@ -669,6 +657,7 @@ void scheduler_time_qos::ue_ctxt::save_ul_alloc(unsigned alloc_bytes)
   }
   ul_sum_alloc_bytes += alloc_bytes;
 }
+
 
 
 

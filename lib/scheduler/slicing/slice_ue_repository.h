@@ -115,6 +115,14 @@ public:
     return contains(lcg_id) ? u.ul_logical_channels().average_bit_rate(lcg_id) : 0;
   }
 
+  /// Enable MAC SDU delivered-rate tracking / MFBR after DSCP runtime GBR overlay.
+  void apply_dl_lc_rate_avg_window(lcid_t lcid) const
+  {
+    if (contains(lcid)) {
+      u.dl_logical_channels().apply_lc_rate_avg_window(lcid);
+    }
+  }
+
   /// Retrieve the Head-of-Line (HOL) Time-of-arrival (TOA) for a given logical channel.
   slot_point dl_hol_toa(lcid_t lcid) const
   {
@@ -178,5 +186,6 @@ private:
 };
 
 } // namespace srsran
+
 
 
