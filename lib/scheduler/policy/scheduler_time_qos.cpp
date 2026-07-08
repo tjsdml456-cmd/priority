@@ -200,9 +200,9 @@ static double compute_dl_qos_weights(const slice_ue&                  u,
         delay_weight += delay_contrib;
 
          if ( static_cast<double>(pdb) == 300 ) {
-         
+          if ( delay_weight > 1.0 ) {
             delay_weight = 1.0;
-          
+          }
         }
 
         logger.info("[DELAY-WEIGHT] UE{} LCID{} hol_toa={} slot_tx={} hol_delay_ms={:.3f} PDB={}ms delay_contrib={:.3f} "
@@ -243,7 +243,7 @@ static double compute_dl_qos_weights(const slice_ue&                  u,
     }
   }
 
-  gbr_weight = (policy_params.gbr_enabled and gbr_weight != 0) ? gbr_weight: 1.0;
+  gbr_weight = (policy_params.gbr_enabled and gbr_weight != 0) ? std::max(gbr_weight, 1.0) : 1.0;
 
   if (avg_dl_rate == 0) {
     return std::numeric_limits<double>::max();
@@ -265,6 +265,13 @@ static double compute_dl_qos_weights(const slice_ue&                  u,
   double prio_weight = policy_params.priority_enabled ? (max_combined_prio_level + 1 - min_combined_prio) /
                                                             static_cast<double>(max_combined_prio_level + 1)
                                                       : 1.0;
+
+  // If GBR or PDB is unsatisfied (>1), keep both weights at least 1.0 so neither
+  // can dilute the combined priority while the other metric is urgent.
+//  if (gbr_weight < 1.0 or delay_weight < 1.0) {
+//   gbr_weight   = std::max(gbr_weight, 1.0);
+  //  delay_weight = std::max(delay_weight, 1.0);
+  //}
 
   double final_priority = combine_qos_metrics(pf_weight, gbr_weight, prio_weight, delay_weight, policy_params);
 
@@ -359,7 +366,7 @@ static double compute_ul_qos_weights(const slice_ue&                  u,
     }
   }
 
-  gbr_weight = (policy_params.gbr_enabled and gbr_weight != 0) ? std::max(gbr_weight, 1.0) : 1.0;
+  gbr_weight = (policy_params.gbr_enabled and gbr_weight != 0) ? gbr_weight : 1.0;
   double prio_weight = policy_params.priority_enabled ? (max_combined_prio_level + 1 - min_combined_prio) /
                                                             static_cast<double>(max_combined_prio_level + 1)
                                                       : 1.0;
