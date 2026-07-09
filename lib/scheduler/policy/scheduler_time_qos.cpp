@@ -200,9 +200,9 @@ static double compute_dl_qos_weights(const slice_ue&                  u,
         delay_weight += delay_contrib;
 
          if ( static_cast<double>(pdb) == 300 ) {
-          if ( delay_weight > 1.0 ) {
+
             delay_weight = 1.0;
-          }
+          
         }
 
         logger.info("[DELAY-WEIGHT] UE{} LCID{} hol_toa={} slot_tx={} hol_delay_ms={:.3f} PDB={}ms delay_contrib={:.3f} "
