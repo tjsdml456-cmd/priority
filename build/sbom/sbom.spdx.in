@@ -2,12 +2,12 @@ SPDXVersion: SPDX-2.3
 DataLicense: CC0-1.0
 SPDXID: SPDXRef-DOCUMENT
 DocumentName: srsran
-DocumentNamespace: https://srs.io/spdxdocs/srsran-4574f9eff1${SBOM_EXT_DOCS}
+DocumentNamespace: https://srs.io/spdxdocs/srsran-c59839899b${SBOM_EXT_DOCS}
 Creator: Organization: Software Radio Systems Ltd
 Creator: Tool: cmake-sbom
-CreatorComment: <text>This SPDX document was created from CMake 3.28.3, using cmake-sbom
+CreatorComment: <text>This SPDX document was created from CMake 3.22.1, using cmake-sbom
 from https://github.com/DEMCON/cmake-sbom</text>
-Created: 2026-02-18T04:29:51Z
+Created: 2026-07-10T04:49:06Z
 
 PackageName: GNU
 SPDXID: SPDXRef-compiler
@@ -25,23 +25,23 @@ RelationshipComment: <text>SPDXRef-Package-srsRAN-5G-CU-DU is built by compiler 
 
 PackageName: srsran
 SPDXID: SPDXRef-Package-srsRAN-5G-CU-DU
-ExternalRef: PACKAGE-MANAGER purl pkg:generic/srsran@4574f9eff1?download_url=https://github.com/srsran/srsRAN_Project.git
-PackageVersion: 4574f9eff1
+ExternalRef: PACKAGE-MANAGER purl pkg:generic/srsran@c59839899b?download_url=https://github.com/srsran/srsRAN_Project.git
+PackageVersion: c59839899b
 PackageSupplier: Organization: Software Radio Systems Ltd
 PackageDownloadLocation: https://github.com/srsran/srsRAN_Project.git
 PackageLicenseConcluded: LicenseRef-srsRAN
 PackageLicenseDeclared: LicenseRef-srsRAN
 PackageCopyrightText: 2026 Software Radio Systems Ltd
 PackageHomePage: https://srs.io
-PackageComment: <text>Built by CMake 3.28.3 with Release configuration for Linux (x86_64)</text>
+PackageComment: <text>Built by CMake 3.22.1 with Release configuration for Linux (x86_64)</text>
 PackageVerificationCode: ${SBOM_VERIFICATION_CODE}
-BuiltDate: 2026-02-18T04:29:51Z
+BuiltDate: 2026-07-10T04:49:06Z
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-srsRAN-5G-CU-DU
 
 FileName: ./bin/srscu
 SPDXID: SPDXRef-Binary-srscu
 FileType: BINARY
-FileChecksum: SHA1: 8109bf7a27aa76b0dfce797188b76ec7f746e128
+FileChecksum: SHA1: a617c86708730a806a2f29535f614f2ad6ae0a23
 LicenseConcluded: LicenseRef-srsRAN
 LicenseInfoInFile: NOASSERTION
 FileCopyrightText: NOASSERTION
@@ -49,7 +49,7 @@ FileCopyrightText: NOASSERTION
 FileName: ./bin/srscucp
 SPDXID: SPDXRef-Binary-srscucp
 FileType: BINARY
-FileChecksum: SHA1: eff2f79baf001c11cb9dbec26016999ebf3d44e1
+FileChecksum: SHA1: 2f8a9f5724e7680468b97f29a726fe600deba08a
 LicenseConcluded: LicenseRef-srsRAN
 LicenseInfoInFile: NOASSERTION
 FileCopyrightText: NOASSERTION
@@ -57,7 +57,7 @@ FileCopyrightText: NOASSERTION
 FileName: ./bin/srscuup
 SPDXID: SPDXRef-Binary-srscuup
 FileType: BINARY
-FileChecksum: SHA1: 78425f85435817094a28e067f9d4b0d2cf693226
+FileChecksum: SHA1: 4c88a1254336f4d20eb74b4fc1ff62ec1d1d0360
 LicenseConcluded: LicenseRef-srsRAN
 LicenseInfoInFile: NOASSERTION
 FileCopyrightText: NOASSERTION
@@ -65,7 +65,7 @@ FileCopyrightText: NOASSERTION
 FileName: ./bin/srsdu
 SPDXID: SPDXRef-Binary-srsdu
 FileType: BINARY
-FileChecksum: SHA1: 04306575dfa017242ea3981c322906b12d2193a4
+FileChecksum: SHA1: 82e8c008eb17933d1f678d8fc4ec35ee7b7ceb93
 LicenseConcluded: LicenseRef-srsRAN
 LicenseInfoInFile: NOASSERTION
 FileCopyrightText: NOASSERTION
@@ -73,7 +73,7 @@ FileCopyrightText: NOASSERTION
 FileName: ./bin/srsdu
 SPDXID: SPDXRef-Binary-srsdu-split-6
 FileType: BINARY
-FileChecksum: SHA1: 04306575dfa017242ea3981c322906b12d2193a4
+FileChecksum: SHA1: 82e8c008eb17933d1f678d8fc4ec35ee7b7ceb93
 LicenseConcluded: LicenseRef-srsRAN
 LicenseInfoInFile: NOASSERTION
 FileCopyrightText: NOASSERTION
@@ -81,7 +81,7 @@ FileCopyrightText: NOASSERTION
 FileName: ./bin/srsdu
 SPDXID: SPDXRef-Binary-srsdu-split-7-2
 FileType: BINARY
-FileChecksum: SHA1: 04306575dfa017242ea3981c322906b12d2193a4
+FileChecksum: SHA1: 82e8c008eb17933d1f678d8fc4ec35ee7b7ceb93
 LicenseConcluded: LicenseRef-srsRAN
 LicenseInfoInFile: NOASSERTION
 FileCopyrightText: NOASSERTION
@@ -89,7 +89,7 @@ FileCopyrightText: NOASSERTION
 FileName: ./bin/srsdu
 SPDXID: SPDXRef-Binary-srsdu-split-8
 FileType: BINARY
-FileChecksum: SHA1: 04306575dfa017242ea3981c322906b12d2193a4
+FileChecksum: SHA1: 82e8c008eb17933d1f678d8fc4ec35ee7b7ceb93
 LicenseConcluded: LicenseRef-srsRAN
 LicenseInfoInFile: NOASSERTION
 FileCopyrightText: NOASSERTION
@@ -97,7 +97,7 @@ FileCopyrightText: NOASSERTION
 FileName: ./bin/srsdu_low
 SPDXID: SPDXRef-Binary-srsdu-low
 FileType: BINARY
-FileChecksum: SHA1: 75d3f1d9cafff6a8e2130ea02948ea3d051e7bbb
+FileChecksum: SHA1: 02ad043b7ebd62f38a4ce035bf9428df6da58a0f
 LicenseConcluded: LicenseRef-srsRAN
 LicenseInfoInFile: NOASSERTION
 FileCopyrightText: NOASSERTION
@@ -105,7 +105,7 @@ FileCopyrightText: NOASSERTION
 FileName: ./bin/gnb
 SPDXID: SPDXRef-Binary-gnb
 FileType: BINARY
-FileChecksum: SHA1: 91f0f2d2715693dfa1c84c9d7f42cd30e8672d2f
+FileChecksum: SHA1: 8ff5f24cfbd62c1a8a34921107e4eabe0f18af95
 LicenseConcluded: LicenseRef-srsRAN
 LicenseInfoInFile: NOASSERTION
 FileCopyrightText: NOASSERTION
@@ -113,7 +113,7 @@ FileCopyrightText: NOASSERTION
 FileName: ./bin/gnb
 SPDXID: SPDXRef-Binary-gnb-split-6
 FileType: BINARY
-FileChecksum: SHA1: 91f0f2d2715693dfa1c84c9d7f42cd30e8672d2f
+FileChecksum: SHA1: 8ff5f24cfbd62c1a8a34921107e4eabe0f18af95
 LicenseConcluded: LicenseRef-srsRAN
 LicenseInfoInFile: NOASSERTION
 FileCopyrightText: NOASSERTION
@@ -121,7 +121,7 @@ FileCopyrightText: NOASSERTION
 FileName: ./bin/gnb
 SPDXID: SPDXRef-Binary-gnb-split-7-2
 FileType: BINARY
-FileChecksum: SHA1: 91f0f2d2715693dfa1c84c9d7f42cd30e8672d2f
+FileChecksum: SHA1: 8ff5f24cfbd62c1a8a34921107e4eabe0f18af95
 LicenseConcluded: LicenseRef-srsRAN
 LicenseInfoInFile: NOASSERTION
 FileCopyrightText: NOASSERTION
@@ -129,7 +129,7 @@ FileCopyrightText: NOASSERTION
 FileName: ./bin/gnb
 SPDXID: SPDXRef-Binary-gnb-split-8
 FileType: BINARY
-FileChecksum: SHA1: 91f0f2d2715693dfa1c84c9d7f42cd30e8672d2f
+FileChecksum: SHA1: 8ff5f24cfbd62c1a8a34921107e4eabe0f18af95
 LicenseConcluded: LicenseRef-srsRAN
 LicenseInfoInFile: NOASSERTION
 FileCopyrightText: NOASSERTION
@@ -139,7 +139,7 @@ SPDXID: SPDXRef-mbedTLS
 PackageDownloadLocation: https://tls.mbed.org
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
-PackageVersion: 2.28.8
+PackageVersion: unknown
 PackageSupplier: Organization: MbedTLS project
 FilesAnalyzed: false
 PackageLicenseConcluded: Apache-2.0
@@ -150,7 +150,7 @@ SPDXID: SPDXRef-FFTW3
 PackageDownloadLocation: http://www.fftw.org
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
-PackageVersion: 3.3.10
+PackageVersion: 3.3.8
 PackageSupplier: Organization: FFTW project
 FilesAnalyzed: false
 PackageLicenseConcluded: GPL-2.0-or-later OR LGPL-2.1-or-later
@@ -172,7 +172,7 @@ SPDXID: SPDXRef-yaml-cpp
 PackageDownloadLocation: https://github.com/jbeder/yaml-cpp
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
-PackageVersion: 0.8.0
+PackageVersion: 0.7.0
 PackageSupplier: Organization: yaml-cpp project
 FilesAnalyzed: false
 PackageLicenseConcluded: MIT

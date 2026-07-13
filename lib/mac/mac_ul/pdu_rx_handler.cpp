@@ -22,10 +22,12 @@
 
 #include "pdu_rx_handler.h"
 #include "srsran/instrumentation/traces/up_traces.h"
+#include "srsran/ran/logical_channel/lcid.h"
 #include "srsran/srslog/srslog.h"
 #include "srsran/support/format/fmt_basic_parser.h"
 #include "srsran/support/format/fmt_to_c_str.h"
 #include "fmt/std.h"
+#include <chrono>
 
 using namespace srsran;
 
@@ -167,6 +169,11 @@ bool pdu_rx_handler::handle_rx_subpdus(const decoded_mac_rx_pdu& ctx)
 {
   mac_ul_ue_context* ue = ue_manager.find_ue(ctx.ue_index);
 
+  // Advance fixed THP windows even when the PDU only carries MAC CEs (idle vol_bytes=0).
+  if (ue != nullptr) {
+    ue->shaped_thp_tracker.on_tick(std::chrono::steady_clock::now());
+  }
+
   // Process SDUs and MAC CEs that are not C-RNTI MAC CE.
   for (const mac_ul_sch_subpdu& subpdu : ctx.decoded_subpdus) {
     const bool ret = subpdu.lcid().is_sdu() ? handle_sdu(ctx, subpdu, ue) : handle_mac_ce(ctx, subpdu);
@@ -197,6 +204,11 @@ bool pdu_rx_handler::handle_sdu(const decoded_mac_rx_pdu& ctx, const mac_ul_sch_
 
   // Log MAC UL SDU
   logger.debug("{}: Forwarding SDU of {} bytes", create_prefix(ctx, sdu), sdu.sdu_length());
+
+  // Track demuxed DRB MAC SDU payload (excludes padding and MAC CEs), mirroring DL MAC-THP.
+  if (not is_srb(lcid) and sdu.sdu_length() > 0) {
+    ue->shaped_thp_tracker.on_shaped_payload(sdu.sdu_length(), std::chrono::steady_clock::now());
+  }
 
   // Push PDU to upper layers
   ue->ul_bearers[lcid]->on_new_sdu(byte_buffer_slice{ctx.pdu_rx.pdu, sdu.payload()});
@@ -421,3 +433,4 @@ void pdu_rx_handler::write_pcap_rx_pdu(slot_point sl_rx, const mac_rx_pdu& pdu)
   context.length              = pdu.pdu.length();
   pcap.push_pdu(context, pdu.pdu.copy());
 }
+

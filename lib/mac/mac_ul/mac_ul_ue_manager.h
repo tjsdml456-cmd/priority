@@ -23,6 +23,7 @@
 #pragma once
 
 #include "../rnti_value_table.h"
+#include "ul_mac_shaped_thp_tracker.h"
 #include "srsran/adt/slotted_vector.h"
 #include "srsran/mac/mac_sdu_handler.h"
 #include "srsran/mac/mac_ue_configurator.h"
@@ -38,7 +39,10 @@ using du_rnti_table = rnti_value_table<du_ue_index_t, du_ue_index_t::INVALID_DU_
 class mac_ul_ue_context
 {
 public:
-  explicit mac_ul_ue_context(du_ue_index_t ue_index_, rnti_t rnti_) : ue_index(ue_index_), rnti(rnti_) {}
+  explicit mac_ul_ue_context(du_ue_index_t ue_index_, rnti_t rnti_) :
+    ue_index(ue_index_), rnti(rnti_), shaped_thp_tracker(ue_index_)
+  {
+  }
 
   const du_ue_index_t ue_index = MAX_NOF_DU_UES;
   const rnti_t        rnti     = rnti_t::INVALID_RNTI;
@@ -48,6 +52,9 @@ public:
 
   /// List of UL PDU notification endpoints associated to UE's logical channels.
   slotted_vector<mac_sdu_rx_notifier*> ul_bearers;
+
+  /// Per-UE UL MAC SDU payload throughput tracker (measurement only).
+  ul_mac_shaped_thp_tracker shaped_thp_tracker;
 };
 
 /// Class that manages the creation/reconfiguration/deletion of UEs from the MAC UL
@@ -92,3 +99,4 @@ private:
 };
 
 } // namespace srsran
+

@@ -5,11 +5,11 @@
 
 cu_cp:
   amf:
-    addr: 127.0.0.5                  # The address or hostname of the AMF.
+    addr: 127.0.0.5                # The address or hostname of the AMF.
     port: 38412
-    bind_addr: 127.0.0.5            # A local IP that the gNB binds to for traffic from the AMF.
+    bind_addr: 127.0.0.5           # A local IP that the gNB binds to for traffic from the AMF.
     supported_tracking_areas:
-      - tac: 7
+      - tac: 1
         plmn_list:
           - plmn: "00101"
             tai_slice_support_list:
@@ -21,15 +21,18 @@ ru_sdr:
   device_args: tx_port=tcp://127.0.0.1:2000,rx_port=tcp://127.0.0.1:2001,base_srate=11.52e6 # Optionally pass arguments to the selected RF driver.
   srate: 11.52                      # RF sample rate might need to be adjusted according to selected bandwidth.
   tx_gain: 75                       # Transmit gain of the RF might need to adjusted to the given situation.
-  rx_gain: 75                       # Receive gain of the RF might need to adjusted to the given situation.
+  rx_gain: 80                       # Receive gain of the RF might need to adjusted to the given situation.
 
 cell_cfg:
+  mac_cell_group:
+    bsr_cfg:
+      periodic_bsr_timer: 1    # BSR을 더 자주 (ms 단위 enum, 가능하면 최단)
   dl_arfcn: 368500                  # ARFCN of the downlink carrier (center frequency).
   band: 3                           # The NR band.
   channel_bandwidth_MHz: 10         # Bandwith in MHz. Number of PRBs will be automatically derived.
   common_scs: 15                    # Subcarrier spacing in kHz used for data.
   plmn: "00101"                     # PLMN broadcasted by the gNB.
-  tac: 7                            # Tracking area code (needs to match the core configuration).
+  tac: 1                            # Tracking area code (needs to match the core configuration).
   pdcch:
     common:
       ss0_index: 0                  # Set search space zero index to match srsUE capabilities
@@ -47,6 +50,8 @@ cell_cfg:
   pusch:
     mcs_table: qam64                # Sets PUSCH MCS to 64 QAM
 
+  pucch:
+    sr_period_ms: 2            # SR 기회 더 자주
 log:
   filename: /tmp/gnb.log            # Path of the log file.
   all_level: info                   # Logging level applied to all layers.
@@ -57,3 +62,4 @@ pcap:
   mac_filename: /tmp/gnb_mac.pcap   # Path where the MAC PCAP is stored.
   ngap_enable: false                # Set to true to enable NGAP PCAPs.
   ngap_filename: /tmp/gnb_ngap.pcap # Path where the NGAP PCAP is stored.
+
