@@ -256,10 +256,6 @@ static bool validate_pdcp_appconfig(five_qi_t five_qi, const cu_cp_unit_pdcp_con
     fmt::print("PDCP t-Reordering=infinity on DRBs is not advised. It can cause data stalls. {}\n", five_qi);
   }
 
-  if (config.rx.out_of_order_delivery) {
-    fmt::print("PDCP RX out-of-order delivery is not supported. {}\n", five_qi);
-    return false;
-  }
   return true;
 }
 
@@ -526,3 +522,4 @@ bool srsran::validate_cu_cp_unit_config(const cu_cp_unit_config& config)
 {
   return validate_cu_cp_appconfig(config.gnb_id, config);
 }
+

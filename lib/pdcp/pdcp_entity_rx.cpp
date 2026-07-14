@@ -41,7 +41,14 @@ pdcp_entity_rx::pdcp_entity_rx(uint32_t                        ue_index,
                                pdcp_metrics_aggregator&        metrics_agg_) :
   pdcp_entity_tx_rx_base(rb_id_, cfg_.rb_type, cfg_.rlc_mode, cfg_.sn_size),
   logger("PDCP", {ue_index, rb_id_, "UL"}),
-  cfg(cfg_),
+  cfg([&cfg_]() {
+    pdcp_rx_config c = cfg_;
+    // Force OOO to SDAP for DRB UL (ignore qos.yml / E1AP). SRB stays in-order.
+    if (c.rb_type == pdcp_rb_type::drb) {
+      c.out_of_order_delivery = true;
+    }
+    return c;
+  }()),
   rx_window(logger, pdcp_window_size(pdcp_sn_size_to_uint(cfg.sn_size))),
   upper_dn(upper_dn_),
   upper_cn(upper_cn_),
@@ -399,7 +406,6 @@ void pdcp_entity_rx::apply_reordering(pdcp_rx_pdu_info pdu_info)
 
   // Store PDU in Rx window
   pdcp_rx_sdu_info& sdu_info = rx_window.add_sn(rcvd_count);
-  sdu_info.buf               = std::move(pdu_info.buf);
   sdu_info.count             = pdu_info.count;
   sdu_info.time_of_arrival   = pdu_info.time_of_arrival;
 
@@ -408,15 +414,25 @@ void pdcp_entity_rx::apply_reordering(pdcp_rx_pdu_info pdu_info)
     st.rx_next = rcvd_count + 1;
   }
 
-  // TODO if out-of-order configured, submit to upper layer
-  // /!\ Caution: reorder_queue is used to build status report:
-  //     For out-of-order:
-  //     - store empty buffers there
-  //     - clean upon each rx'ed PDU
-  //     - don't forward empty buffer to upper layers
+  // outOfOrderDelivery (TS 38.323): deliver to upper layers immediately.
+  // Keep an empty placeholder in the RX window for RX_DELIV / status-report bookkeeping;
+  // do not forward that empty buffer again when advancing RX_DELIV.
+  if (cfg.out_of_order_delivery) {
+    logger.log_info("RX SDU (OOO). count={}", rcvd_count);
+    metrics.add_sdus(1, pdu_info.buf.length());
+    record_reordering_dealy(pdu_info.time_of_arrival);
+    auto sdu_latency_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::high_resolution_clock::now() - pdu_info.time_of_arrival);
+    metrics.add_sdu_latency_ns(sdu_latency_ns.count());
+    upper_dn.on_new_sdu(std::move(pdu_info.buf));
+    sdu_info.buf = {};
+  } else {
+    sdu_info.buf = std::move(pdu_info.buf);
+  }
 
   if (rcvd_count == st.rx_deliv) {
-    // Deliver to upper layers in ascending order of associated COUNT
+    // Deliver to upper layers in ascending order of associated COUNT (in-order path),
+    // or advance RX_DELIV across already-delivered OOO placeholders.
     deliver_all_consecutive_counts();
   }
 
@@ -462,21 +478,31 @@ void pdcp_entity_rx::handle_control_pdu(byte_buffer_chain pdu)
   }
 }
 
+void pdcp_entity_rx::deliver_sdu(pdcp_rx_sdu_info& sdu_info)
+{
+  // Empty buffer = already delivered under outOfOrderDelivery; only free the window slot.
+  if (sdu_info.buf.empty()) {
+    return;
+  }
+
+  logger.log_info("RX SDU. count={}", sdu_info.count);
+
+  // Pass PDCP SDU to the upper layers
+  metrics.add_sdus(1, sdu_info.buf.length());
+  record_reordering_dealy(sdu_info.time_of_arrival);
+  auto sdu_latency_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+      std::chrono::high_resolution_clock::now() - sdu_info.time_of_arrival);
+  metrics.add_sdu_latency_ns(sdu_latency_ns.count());
+  upper_dn.on_new_sdu(std::move(sdu_info.buf));
+}
+
 // Deliver all consecutively associated COUNTs.
 // Update RX_DELIV after submitting to higher layers
 void pdcp_entity_rx::deliver_all_consecutive_counts()
 {
   while (st.rx_deliv != st.rx_next && rx_window.has_sn(st.rx_deliv)) {
     pdcp_rx_sdu_info& sdu_info = rx_window[st.rx_deliv];
-    logger.log_info("RX SDU. count={}", st.rx_deliv);
-
-    // Pass PDCP SDU to the upper layers
-    metrics.add_sdus(1, sdu_info.buf.length());
-    record_reordering_dealy(sdu_info.time_of_arrival);
-    auto sdu_latency_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-        std::chrono::high_resolution_clock::now() - sdu_info.time_of_arrival);
-    metrics.add_sdu_latency_ns(sdu_latency_ns.count());
-    upper_dn.on_new_sdu(std::move(sdu_info.buf));
+    deliver_sdu(sdu_info);
     rx_window.remove_sn(st.rx_deliv);
 
     // Update RX_DELIV
@@ -492,15 +518,7 @@ void pdcp_entity_rx::deliver_all_sdus()
   for (uint32_t count = st.rx_deliv; count < st.rx_next; count++) {
     if (rx_window.has_sn(count)) {
       pdcp_rx_sdu_info& sdu_info = rx_window[count];
-      logger.log_info("RX SDU. count={}", count);
-
-      // Pass PDCP SDU to the upper layers
-      metrics.add_sdus(1, sdu_info.buf.length());
-      record_reordering_dealy(sdu_info.time_of_arrival);
-      auto sdu_latency_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-          std::chrono::high_resolution_clock::now() - sdu_info.time_of_arrival);
-      metrics.add_sdu_latency_ns(sdu_latency_ns.count());
-      upper_dn.on_new_sdu(std::move(sdu_info.buf));
+      deliver_sdu(sdu_info);
       rx_window.remove_sn(count);
     }
   }
@@ -680,15 +698,7 @@ void pdcp_entity_rx::handle_t_reordering_expire()
   while (st.rx_deliv != st.rx_reord) {
     if (rx_window.has_sn(st.rx_deliv)) {
       pdcp_rx_sdu_info& sdu_info = rx_window[st.rx_deliv];
-      logger.log_info("RX SDU. count={}", st.rx_deliv);
-
-      // Pass PDCP SDU to the upper layers
-      metrics.add_sdus(1, sdu_info.buf.length());
-      record_reordering_dealy(sdu_info.time_of_arrival);
-      auto sdu_latency_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-          std::chrono::high_resolution_clock::now() - sdu_info.time_of_arrival);
-      metrics.add_sdu_latency_ns(sdu_latency_ns.count());
-      upper_dn.on_new_sdu(std::move(sdu_info.buf));
+      deliver_sdu(sdu_info);
       rx_window.remove_sn(st.rx_deliv);
     }
 
@@ -766,3 +776,4 @@ void pdcp_entity_rx::record_reordering_dealy(std::chrono::system_clock::time_poi
       std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now() - time_of_arrival);
   metrics.add_reordering_delay_us((uint32_t)time_taken.count());
 }
+

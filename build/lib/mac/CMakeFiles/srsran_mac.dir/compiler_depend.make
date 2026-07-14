@@ -8068,6 +8068,7 @@ lib/mac/CMakeFiles/srsran_mac.dir/mac_factory.cpp.o: ../lib/mac/mac_factory.cpp 
   ../lib/mac/mac_sched/rlf_detector.h \
   ../lib/mac/mac_ul/mac_ul_processor.h \
   ../lib/mac/mac_ul/mac_ul_ue_manager.h \
+  ../lib/mac/mac_ul/ul_mac_shaped_thp_tracker.h \
   ../include/srsran/adt/slotted_vector.h \
   ../lib/mac/mac_ul/pdu_rx_handler.h \
   ../lib/mac/mac_ul/mac_ul_sch_pdu.h \
@@ -8651,6 +8652,7 @@ lib/mac/CMakeFiles/srsran_mac.dir/mac_impl.cpp.o: ../lib/mac/mac_impl.cpp \
   ../lib/mac/mac_sched/rlf_detector.h \
   ../lib/mac/mac_ul/mac_ul_processor.h \
   ../lib/mac/mac_ul/mac_ul_ue_manager.h \
+  ../lib/mac/mac_ul/ul_mac_shaped_thp_tracker.h \
   ../include/srsran/adt/slotted_vector.h \
   ../lib/mac/mac_ul/pdu_rx_handler.h \
   ../lib/mac/mac_ul/mac_ul_sch_pdu.h \
@@ -11107,11 +11109,14 @@ lib/mac/CMakeFiles/srsran_mac.dir/mac_ul/mac_ul_processor.cpp.o: ../lib/mac/mac_
   ../include/srsran/mac/mac_ue_control_information_handler.h \
   ../lib/mac/mac_ul/mac_ul_ue_manager.h \
   ../lib/mac/rnti_value_table.h \
+  ../lib/mac/mac_ul/ul_mac_shaped_thp_tracker.h \
+  ../include/srsran/srslog/srslog.h \
+  ../include/srsran/srslog/detail/support/any.h \
+  ../include/srsran/srslog/logger.h \
   ../include/srsran/adt/slotted_vector.h \
   ../include/srsran/adt/detail/slotted_array_detail.h \
   ../include/srsran/ran/du_ue_list.h \
   ../include/srsran/adt/slotted_array.h \
-  ../include/srsran/srslog/logger.h \
   ../lib/mac/mac_ul/pdu_rx_handler.h \
   ../lib/mac/mac_ul/mac_scheduler_ce_info_handler.h \
   ../lib/mac/mac_ul/ul_bsr.h \
@@ -11163,8 +11168,6 @@ lib/mac/CMakeFiles/srsran_mac.dir/mac_ul/mac_ul_processor.cpp.o: ../lib/mac/mac_
   ../include/srsran/scheduler/scheduler_feedback_handler.h \
   ../include/srsran/ran/csi_report/csi_report_data.h \
   ../include/srsran/scheduler/harq_id.h \
-  ../include/srsran/srslog/srslog.h \
-  ../include/srsran/srslog/detail/support/any.h \
   ../include/srsran/support/async/execute_on_blocking.h \
   ../include/srsran/adt/noop_functor.h \
   ../include/srsran/support/async/execute_on.h \
@@ -11785,19 +11788,12 @@ lib/mac/CMakeFiles/srsran_mac.dir/mac_ul/mac_ul_ue_manager.cpp.o: ../lib/mac/mac
   /usr/include/c++/11/bits/stl_vector.h \
   /usr/include/c++/11/bits/stl_bvector.h \
   /usr/include/c++/11/bits/vector.tcc \
-  ../include/srsran/adt/slotted_vector.h \
-  ../include/srsran/adt/detail/slotted_array_detail.h \
-  ../include/srsran/adt/span.h \
-  ../include/srsran/adt/detail/type_traits.h \
-  ../include/srsran/adt/static_vector.h \
-  /usr/include/c++/11/iterator \
-  /usr/include/c++/11/bits/stream_iterator.h \
-  /usr/include/c++/11/bits/streambuf_iterator.h \
-  /usr/include/c++/11/streambuf \
-  /usr/include/c++/11/bits/ios_base.h \
-  /usr/include/c++/11/bits/locale_classes.h \
-  /usr/include/c++/11/bits/locale_classes.tcc \
-  /usr/include/c++/11/bits/streambuf.tcc \
+  ../lib/mac/mac_ul/ul_mac_shaped_thp_tracker.h \
+  ../include/srsran/ran/du_types.h \
+  ../include/srsran/ran/gnb_constants.h \
+  ../include/srsran/srslog/srslog.h \
+  ../include/srsran/srslog/detail/support/any.h \
+  ../include/srsran/srslog/logger.h \
   ../include/srsran/srslog/log_channel.h \
   ../include/srsran/srslog/detail/log_backend.h \
   ../include/srsran/srslog/shared_types.h \
@@ -11834,8 +11830,21 @@ lib/mac/CMakeFiles/srsran_mac.dir/mac_ul/mac_ul_ue_manager.cpp.o: ../lib/mac/mac
   /usr/include/assert.h \
   /usr/include/c++/11/optional \
   ../external/fmt/include/fmt/ranges.h \
+  /usr/include/c++/11/iterator \
+  /usr/include/c++/11/bits/stream_iterator.h \
+  /usr/include/c++/11/bits/streambuf_iterator.h \
+  /usr/include/c++/11/streambuf \
+  /usr/include/c++/11/bits/ios_base.h \
+  /usr/include/c++/11/bits/locale_classes.h \
+  /usr/include/c++/11/bits/locale_classes.tcc \
+  /usr/include/c++/11/bits/streambuf.tcc \
   /usr/include/c++/11/algorithm \
   /usr/include/c++/11/pstl/glue_algorithm_defs.h \
+  ../include/srsran/adt/slotted_vector.h \
+  ../include/srsran/adt/detail/slotted_array_detail.h \
+  ../include/srsran/adt/span.h \
+  ../include/srsran/adt/detail/type_traits.h \
+  ../include/srsran/adt/static_vector.h \
   ../include/srsran/mac/mac_sdu_handler.h \
   ../include/srsran/adt/byte_buffer.h \
   ../include/srsran/adt/byte_buffer_view.h \
@@ -11865,8 +11874,6 @@ lib/mac/CMakeFiles/srsran_mac.dir/mac_ul/mac_ul_ue_manager.cpp.o: ../lib/mac/mac
   ../include/srsran/scheduler/scheduler_configurator.h \
   ../include/srsran/ran/carrier_configuration.h \
   ../include/srsran/ran/nr_band.h \
-  ../include/srsran/ran/du_types.h \
-  ../include/srsran/ran/gnb_constants.h \
   ../include/srsran/ran/meas_gap_config.h \
   ../include/srsran/ran/slot_point.h \
   ../include/srsran/adt/interval.h \
@@ -11993,10 +12000,7 @@ lib/mac/CMakeFiles/srsran_mac.dir/mac_ul/mac_ul_ue_manager.cpp.o: ../lib/mac/mac
   ../include/srsran/support/async/detail/function_signature.h \
   ../include/srsran/support/detail/type_list.h \
   ../include/srsran/ran/du_ue_list.h \
-  ../include/srsran/adt/slotted_array.h \
-  ../include/srsran/srslog/logger.h \
-  ../include/srsran/srslog/srslog.h \
-  ../include/srsran/srslog/detail/support/any.h
+  ../include/srsran/adt/slotted_array.h
 
 lib/mac/CMakeFiles/srsran_mac.dir/mac_ul/pdu_rx_handler.cpp.o: ../lib/mac/mac_ul/pdu_rx_handler.cpp \
   /usr/include/stdc-predef.h \
@@ -12369,6 +12373,10 @@ lib/mac/CMakeFiles/srsran_mac.dir/mac_ul/pdu_rx_handler.cpp.o: ../lib/mac/mac_ul
   /usr/include/x86_64-linux-gnu/c++/11/bits/cxxabi_tweaks.h \
   ../lib/mac/mac_ul/mac_ul_ue_manager.h \
   ../lib/mac/rnti_value_table.h \
+  ../lib/mac/mac_ul/ul_mac_shaped_thp_tracker.h \
+  ../include/srsran/srslog/srslog.h \
+  ../include/srsran/srslog/detail/support/any.h \
+  ../include/srsran/srslog/logger.h \
   ../include/srsran/adt/slotted_vector.h \
   ../include/srsran/adt/detail/slotted_array_detail.h \
   ../include/srsran/mac/mac_sdu_handler.h \
@@ -12491,7 +12499,6 @@ lib/mac/CMakeFiles/srsran_mac.dir/mac_ul/pdu_rx_handler.cpp.o: ../lib/mac/mac_ul
   ../include/srsran/support/detail/type_list.h \
   ../include/srsran/ran/du_ue_list.h \
   ../include/srsran/adt/slotted_array.h \
-  ../include/srsran/srslog/logger.h \
   ../include/srsran/du/du_high/du_high_executor_mapper.h \
   ../include/srsran/support/executors/task_executor.h \
   ../include/srsran/adt/unique_function.h \
@@ -12519,8 +12526,6 @@ lib/mac/CMakeFiles/srsran_mac.dir/mac_ul/pdu_rx_handler.cpp.o: ../lib/mac/mac_ul
   ../include/srsran/support/tracing/event_tracing.h \
   ../include/srsran/support/tracing/resource_usage.h \
   ../include/srsran/support/format/fmt_basic_parser.h \
-  ../include/srsran/srslog/srslog.h \
-  ../include/srsran/srslog/detail/support/any.h \
   ../include/srsran/support/format/fmt_to_c_str.h
 
 lib/mac/CMakeFiles/srsran_mac.dir/mac_ul/ul_bsr.cpp.o: ../lib/mac/mac_ul/ul_bsr.cpp \
@@ -12909,6 +12914,8 @@ lib/mac/CMakeFiles/srsran_mac.dir/mac_ul/ul_bsr.cpp.o: ../lib/mac/mac_ul/ul_bsr.
 ../lib/mac/mac_ul/pdu_rx_handler.h:
 
 ../include/srsran/adt/slotted_vector.h:
+
+../lib/mac/mac_ul/ul_mac_shaped_thp_tracker.h:
 
 ../lib/mac/mac_ul/mac_ul_ue_manager.h:
 

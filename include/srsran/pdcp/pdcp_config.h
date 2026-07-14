@@ -432,11 +432,12 @@ struct formatter<srsran::pdcp_rx_config> {
   auto format(const srsran::pdcp_rx_config& cfg, FormatContext& ctx) const
   {
     return format_to(ctx.out(),
-                     "rb_type={} rlc_mode={} sn_size={} t_reordering={} {}",
+                     "rb_type={} rlc_mode={} sn_size={} t_reordering={} out_of_order={} {}",
                      cfg.rb_type,
                      cfg.rlc_mode,
                      cfg.sn_size,
                      cfg.t_reordering,
+                     cfg.out_of_order_delivery,
                      cfg.custom);
   }
 };
@@ -470,3 +471,4 @@ struct formatter<srsran::pdcp_config> {
 };
 
 } // namespace fmt
+

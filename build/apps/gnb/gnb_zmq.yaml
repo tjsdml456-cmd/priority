@@ -21,12 +21,9 @@ ru_sdr:
   device_args: tx_port=tcp://127.0.0.1:2000,rx_port=tcp://127.0.0.1:2001,base_srate=11.52e6 # Optionally pass arguments to the selected RF driver.
   srate: 11.52                      # RF sample rate might need to be adjusted according to selected bandwidth.
   tx_gain: 75                       # Transmit gain of the RF might need to adjusted to the given situation.
-  rx_gain: 80                       # Receive gain of the RF might need to adjusted to the given situation.
+  rx_gain: 75                       # Receive gain of the RF might need to adjusted to the given situation.
 
 cell_cfg:
-  mac_cell_group:
-    bsr_cfg:
-      periodic_bsr_timer: 1    # BSR을 더 자주 (ms 단위 enum, 가능하면 최단)
   dl_arfcn: 368500                  # ARFCN of the downlink carrier (center frequency).
   band: 3                           # The NR band.
   channel_bandwidth_MHz: 10         # Bandwith in MHz. Number of PRBs will be automatically derived.
@@ -50,8 +47,10 @@ cell_cfg:
   pusch:
     mcs_table: qam64                # Sets PUSCH MCS to 64 QAM
 
-  pucch:
-    sr_period_ms: 2            # SR 기회 더 자주
+expert_phy:
+  pusch_sinr_calc_method: channel_estimator   # 또는 post_equalization / evm
+
+
 log:
   filename: /tmp/gnb.log            # Path of the log file.
   all_level: info                   # Logging level applied to all layers.

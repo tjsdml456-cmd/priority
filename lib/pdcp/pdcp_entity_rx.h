@@ -219,6 +219,8 @@ private:
   void deliver_all_consecutive_counts();
   void deliver_all_sdus();
   void discard_all_sdus();
+  /// Deliver one SDU to upper layers if the buffer is still present (skip empty OOO placeholders).
+  void deliver_sdu(pdcp_rx_sdu_info& sdu_info);
 
   void record_reordering_dealy(std::chrono::system_clock::time_point time_of_arrival);
 
@@ -274,3 +276,4 @@ struct formatter<srsran::pdcp_rx_state> {
 };
 
 } // namespace fmt
+

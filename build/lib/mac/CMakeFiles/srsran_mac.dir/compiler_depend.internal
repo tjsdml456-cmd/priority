@@ -8085,6 +8085,7 @@ lib/mac/CMakeFiles/srsran_mac.dir/mac_factory.cpp.o
  /home/user/srsRAN_main/srsRAN_Project/lib/mac/mac_sched/rlf_detector.h
  /home/user/srsRAN_main/srsRAN_Project/lib/mac/mac_ul/mac_ul_processor.h
  /home/user/srsRAN_main/srsRAN_Project/lib/mac/mac_ul/mac_ul_ue_manager.h
+ /home/user/srsRAN_main/srsRAN_Project/lib/mac/mac_ul/ul_mac_shaped_thp_tracker.h
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/adt/slotted_vector.h
  /home/user/srsRAN_main/srsRAN_Project/lib/mac/mac_ul/pdu_rx_handler.h
  /home/user/srsRAN_main/srsRAN_Project/lib/mac/mac_ul/mac_ul_sch_pdu.h
@@ -8669,6 +8670,7 @@ lib/mac/CMakeFiles/srsran_mac.dir/mac_impl.cpp.o
  /home/user/srsRAN_main/srsRAN_Project/lib/mac/mac_sched/rlf_detector.h
  /home/user/srsRAN_main/srsRAN_Project/lib/mac/mac_ul/mac_ul_processor.h
  /home/user/srsRAN_main/srsRAN_Project/lib/mac/mac_ul/mac_ul_ue_manager.h
+ /home/user/srsRAN_main/srsRAN_Project/lib/mac/mac_ul/ul_mac_shaped_thp_tracker.h
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/adt/slotted_vector.h
  /home/user/srsRAN_main/srsRAN_Project/lib/mac/mac_ul/pdu_rx_handler.h
  /home/user/srsRAN_main/srsRAN_Project/lib/mac/mac_ul/mac_ul_sch_pdu.h
@@ -11130,11 +11132,14 @@ lib/mac/CMakeFiles/srsran_mac.dir/mac_ul/mac_ul_processor.cpp.o
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/mac/mac_ue_control_information_handler.h
  /home/user/srsRAN_main/srsRAN_Project/lib/mac/mac_ul/mac_ul_ue_manager.h
  /home/user/srsRAN_main/srsRAN_Project/lib/mac/rnti_value_table.h
+ /home/user/srsRAN_main/srsRAN_Project/lib/mac/mac_ul/ul_mac_shaped_thp_tracker.h
+ /home/user/srsRAN_main/srsRAN_Project/include/srsran/srslog/srslog.h
+ /home/user/srsRAN_main/srsRAN_Project/include/srsran/srslog/detail/support/any.h
+ /home/user/srsRAN_main/srsRAN_Project/include/srsran/srslog/logger.h
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/adt/slotted_vector.h
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/adt/detail/slotted_array_detail.h
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/ran/du_ue_list.h
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/adt/slotted_array.h
- /home/user/srsRAN_main/srsRAN_Project/include/srsran/srslog/logger.h
  /home/user/srsRAN_main/srsRAN_Project/lib/mac/mac_ul/pdu_rx_handler.h
  /home/user/srsRAN_main/srsRAN_Project/lib/mac/mac_ul/mac_scheduler_ce_info_handler.h
  /home/user/srsRAN_main/srsRAN_Project/lib/mac/mac_ul/ul_bsr.h
@@ -11186,8 +11191,6 @@ lib/mac/CMakeFiles/srsran_mac.dir/mac_ul/mac_ul_processor.cpp.o
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/scheduler/scheduler_feedback_handler.h
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/ran/csi_report/csi_report_data.h
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/scheduler/harq_id.h
- /home/user/srsRAN_main/srsRAN_Project/include/srsran/srslog/srslog.h
- /home/user/srsRAN_main/srsRAN_Project/include/srsran/srslog/detail/support/any.h
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/support/async/execute_on_blocking.h
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/adt/noop_functor.h
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/support/async/execute_on.h
@@ -11810,19 +11813,12 @@ lib/mac/CMakeFiles/srsran_mac.dir/mac_ul/mac_ul_ue_manager.cpp.o
  /usr/include/c++/11/bits/stl_vector.h
  /usr/include/c++/11/bits/stl_bvector.h
  /usr/include/c++/11/bits/vector.tcc
- /home/user/srsRAN_main/srsRAN_Project/include/srsran/adt/slotted_vector.h
- /home/user/srsRAN_main/srsRAN_Project/include/srsran/adt/detail/slotted_array_detail.h
- /home/user/srsRAN_main/srsRAN_Project/include/srsran/adt/span.h
- /home/user/srsRAN_main/srsRAN_Project/include/srsran/adt/detail/type_traits.h
- /home/user/srsRAN_main/srsRAN_Project/include/srsran/adt/static_vector.h
- /usr/include/c++/11/iterator
- /usr/include/c++/11/bits/stream_iterator.h
- /usr/include/c++/11/bits/streambuf_iterator.h
- /usr/include/c++/11/streambuf
- /usr/include/c++/11/bits/ios_base.h
- /usr/include/c++/11/bits/locale_classes.h
- /usr/include/c++/11/bits/locale_classes.tcc
- /usr/include/c++/11/bits/streambuf.tcc
+ /home/user/srsRAN_main/srsRAN_Project/lib/mac/mac_ul/ul_mac_shaped_thp_tracker.h
+ /home/user/srsRAN_main/srsRAN_Project/include/srsran/ran/du_types.h
+ /home/user/srsRAN_main/srsRAN_Project/include/srsran/ran/gnb_constants.h
+ /home/user/srsRAN_main/srsRAN_Project/include/srsran/srslog/srslog.h
+ /home/user/srsRAN_main/srsRAN_Project/include/srsran/srslog/detail/support/any.h
+ /home/user/srsRAN_main/srsRAN_Project/include/srsran/srslog/logger.h
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/srslog/log_channel.h
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/srslog/detail/log_backend.h
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/srslog/shared_types.h
@@ -11859,8 +11855,21 @@ lib/mac/CMakeFiles/srsran_mac.dir/mac_ul/mac_ul_ue_manager.cpp.o
  /usr/include/assert.h
  /usr/include/c++/11/optional
  /home/user/srsRAN_main/srsRAN_Project/external/fmt/include/fmt/ranges.h
+ /usr/include/c++/11/iterator
+ /usr/include/c++/11/bits/stream_iterator.h
+ /usr/include/c++/11/bits/streambuf_iterator.h
+ /usr/include/c++/11/streambuf
+ /usr/include/c++/11/bits/ios_base.h
+ /usr/include/c++/11/bits/locale_classes.h
+ /usr/include/c++/11/bits/locale_classes.tcc
+ /usr/include/c++/11/bits/streambuf.tcc
  /usr/include/c++/11/algorithm
  /usr/include/c++/11/pstl/glue_algorithm_defs.h
+ /home/user/srsRAN_main/srsRAN_Project/include/srsran/adt/slotted_vector.h
+ /home/user/srsRAN_main/srsRAN_Project/include/srsran/adt/detail/slotted_array_detail.h
+ /home/user/srsRAN_main/srsRAN_Project/include/srsran/adt/span.h
+ /home/user/srsRAN_main/srsRAN_Project/include/srsran/adt/detail/type_traits.h
+ /home/user/srsRAN_main/srsRAN_Project/include/srsran/adt/static_vector.h
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/mac/mac_sdu_handler.h
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/adt/byte_buffer.h
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/adt/byte_buffer_view.h
@@ -11890,8 +11899,6 @@ lib/mac/CMakeFiles/srsran_mac.dir/mac_ul/mac_ul_ue_manager.cpp.o
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/scheduler/scheduler_configurator.h
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/ran/carrier_configuration.h
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/ran/nr_band.h
- /home/user/srsRAN_main/srsRAN_Project/include/srsran/ran/du_types.h
- /home/user/srsRAN_main/srsRAN_Project/include/srsran/ran/gnb_constants.h
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/ran/meas_gap_config.h
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/ran/slot_point.h
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/adt/interval.h
@@ -12019,9 +12026,6 @@ lib/mac/CMakeFiles/srsran_mac.dir/mac_ul/mac_ul_ue_manager.cpp.o
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/support/detail/type_list.h
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/ran/du_ue_list.h
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/adt/slotted_array.h
- /home/user/srsRAN_main/srsRAN_Project/include/srsran/srslog/logger.h
- /home/user/srsRAN_main/srsRAN_Project/include/srsran/srslog/srslog.h
- /home/user/srsRAN_main/srsRAN_Project/include/srsran/srslog/detail/support/any.h
 
 lib/mac/CMakeFiles/srsran_mac.dir/mac_ul/pdu_rx_handler.cpp.o
  /home/user/srsRAN_main/srsRAN_Project/lib/mac/mac_ul/pdu_rx_handler.cpp
@@ -12395,6 +12399,10 @@ lib/mac/CMakeFiles/srsran_mac.dir/mac_ul/pdu_rx_handler.cpp.o
  /usr/include/x86_64-linux-gnu/c++/11/bits/cxxabi_tweaks.h
  /home/user/srsRAN_main/srsRAN_Project/lib/mac/mac_ul/mac_ul_ue_manager.h
  /home/user/srsRAN_main/srsRAN_Project/lib/mac/rnti_value_table.h
+ /home/user/srsRAN_main/srsRAN_Project/lib/mac/mac_ul/ul_mac_shaped_thp_tracker.h
+ /home/user/srsRAN_main/srsRAN_Project/include/srsran/srslog/srslog.h
+ /home/user/srsRAN_main/srsRAN_Project/include/srsran/srslog/detail/support/any.h
+ /home/user/srsRAN_main/srsRAN_Project/include/srsran/srslog/logger.h
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/adt/slotted_vector.h
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/adt/detail/slotted_array_detail.h
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/mac/mac_sdu_handler.h
@@ -12517,7 +12525,6 @@ lib/mac/CMakeFiles/srsran_mac.dir/mac_ul/pdu_rx_handler.cpp.o
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/support/detail/type_list.h
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/ran/du_ue_list.h
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/adt/slotted_array.h
- /home/user/srsRAN_main/srsRAN_Project/include/srsran/srslog/logger.h
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/du/du_high/du_high_executor_mapper.h
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/support/executors/task_executor.h
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/adt/unique_function.h
@@ -12545,8 +12552,6 @@ lib/mac/CMakeFiles/srsran_mac.dir/mac_ul/pdu_rx_handler.cpp.o
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/support/tracing/event_tracing.h
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/support/tracing/resource_usage.h
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/support/format/fmt_basic_parser.h
- /home/user/srsRAN_main/srsRAN_Project/include/srsran/srslog/srslog.h
- /home/user/srsRAN_main/srsRAN_Project/include/srsran/srslog/detail/support/any.h
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/support/format/fmt_to_c_str.h
 
 lib/mac/CMakeFiles/srsran_mac.dir/mac_ul/ul_bsr.cpp.o

@@ -62,7 +62,7 @@ inline std::map<five_qi_t, srs_cu_cp::cu_cp_qos_config> make_default_cu_cp_qos_c
 
     // > Rx
     pdcp_cfg.rx.sn_size               = pdcp_sn_size::size18bits;
-    pdcp_cfg.rx.out_of_order_delivery = false;
+    pdcp_cfg.rx.out_of_order_delivery = true;
     pdcp_cfg.rx.t_reordering          = pdcp_t_reordering::ms0;
 
     cfg.pdcp                     = pdcp_cfg;
@@ -86,7 +86,7 @@ inline std::map<five_qi_t, srs_cu_cp::cu_cp_qos_config> make_default_cu_cp_qos_c
 
     // > Rx
     pdcp_cfg.rx.sn_size               = pdcp_sn_size::size18bits;
-    pdcp_cfg.rx.out_of_order_delivery = false;
+    pdcp_cfg.rx.out_of_order_delivery = true;
     pdcp_cfg.rx.t_reordering          = pdcp_t_reordering::ms0;
 
     cfg.pdcp                     = pdcp_cfg;
@@ -110,7 +110,7 @@ inline std::map<five_qi_t, srs_cu_cp::cu_cp_qos_config> make_default_cu_cp_qos_c
 
     // > Rx
     pdcp_cfg.rx.sn_size               = pdcp_sn_size::size18bits;
-    pdcp_cfg.rx.out_of_order_delivery = false;
+    pdcp_cfg.rx.out_of_order_delivery = true;
     pdcp_cfg.rx.t_reordering          = pdcp_t_reordering::ms0;
 
     cfg.pdcp                     = pdcp_cfg;
@@ -134,7 +134,7 @@ inline std::map<five_qi_t, srs_cu_cp::cu_cp_qos_config> make_default_cu_cp_qos_c
 
     // > Rx
     pdcp_cfg.rx.sn_size               = pdcp_sn_size::size18bits;
-    pdcp_cfg.rx.out_of_order_delivery = false;
+    pdcp_cfg.rx.out_of_order_delivery = true;
     pdcp_cfg.rx.t_reordering          = pdcp_t_reordering::ms140;
 
     cfg.pdcp                     = pdcp_cfg;
@@ -158,7 +158,7 @@ inline std::map<five_qi_t, srs_cu_cp::cu_cp_qos_config> make_default_cu_cp_qos_c
 
     // > Rx
     pdcp_cfg.rx.sn_size               = pdcp_sn_size::size18bits;
-    pdcp_cfg.rx.out_of_order_delivery = false;
+    pdcp_cfg.rx.out_of_order_delivery = true;
     pdcp_cfg.rx.t_reordering          = pdcp_t_reordering::ms0;
 
     cfg.pdcp                      = pdcp_cfg;
@@ -182,7 +182,7 @@ inline std::map<five_qi_t, srs_cu_cp::cu_cp_qos_config> make_default_cu_cp_qos_c
 
     // > Rx
     pdcp_cfg.rx.sn_size               = pdcp_sn_size::size18bits;
-    pdcp_cfg.rx.out_of_order_delivery = false;
+    pdcp_cfg.rx.out_of_order_delivery = true;
     pdcp_cfg.rx.t_reordering          = pdcp_t_reordering::ms0;
 
     cfg.pdcp                      = pdcp_cfg;
@@ -206,7 +206,7 @@ inline std::map<five_qi_t, srs_cu_cp::cu_cp_qos_config> make_default_cu_cp_qos_c
 
     // > Rx
     pdcp_cfg.rx.sn_size               = pdcp_sn_size::size18bits;
-    pdcp_cfg.rx.out_of_order_delivery = false;
+    pdcp_cfg.rx.out_of_order_delivery = true;
     pdcp_cfg.rx.t_reordering          = pdcp_t_reordering::ms0;
 
     cfg.pdcp                      = pdcp_cfg;
@@ -233,7 +233,7 @@ inline std::map<five_qi_t, srs_cu_cp::cu_cp_qos_config> make_default_cu_cp_qos_c
 
     // > Rx
     pdcp_cfg.rx.sn_size               = pdcp_sn_size::size18bits;
-    pdcp_cfg.rx.out_of_order_delivery = false;
+    pdcp_cfg.rx.out_of_order_delivery = true;
     pdcp_cfg.rx.t_reordering          = pdcp_t_reordering::ms500;
 
     cfg.pdcp                     = pdcp_cfg;
@@ -257,7 +257,7 @@ inline std::map<five_qi_t, srs_cu_cp::cu_cp_qos_config> make_default_cu_cp_qos_c
 
     // > Rx
     pdcp_cfg.rx.sn_size               = pdcp_sn_size::size18bits;
-    pdcp_cfg.rx.out_of_order_delivery = false;
+    pdcp_cfg.rx.out_of_order_delivery = true;
     pdcp_cfg.rx.t_reordering          = pdcp_t_reordering::ms100;
 
     cfg.pdcp                     = pdcp_cfg;
@@ -281,7 +281,7 @@ inline std::map<five_qi_t, srs_cu_cp::cu_cp_qos_config> make_default_cu_cp_qos_c
 
     // > Rx
     pdcp_cfg.rx.sn_size               = pdcp_sn_size::size18bits;
-    pdcp_cfg.rx.out_of_order_delivery = false;
+    pdcp_cfg.rx.out_of_order_delivery = true;
     pdcp_cfg.rx.t_reordering          = pdcp_t_reordering::ms50;
 
     cfg.pdcp                     = pdcp_cfg;
@@ -305,7 +305,7 @@ inline std::map<five_qi_t, srs_cu_cp::cu_cp_qos_config> make_default_cu_cp_qos_c
 
     // > Rx
     pdcp_cfg.rx.sn_size               = pdcp_sn_size::size18bits;
-    pdcp_cfg.rx.out_of_order_delivery = false;
+    pdcp_cfg.rx.out_of_order_delivery = true;
     pdcp_cfg.rx.t_reordering          = pdcp_t_reordering::ms100;
 
     cfg.pdcp                     = pdcp_cfg;
@@ -318,7 +318,7 @@ inline std::map<five_qi_t, srs_cu_cp::cu_cp_qos_config> make_default_cu_cp_qos_c
     pdcp_config                 pdcp_cfg{};
 
     pdcp_cfg.rb_type                       = pdcp_rb_type::drb;
-    pdcp_cfg.rlc_mode                      = pdcp_rlc_mode::am;
+    pdcp_cfg.rlc_mode                      = pdcp_rlc_mode::um;
     pdcp_cfg.ciphering_required            = true;
     pdcp_cfg.integrity_protection_required = false;
 
@@ -329,7 +329,7 @@ inline std::map<five_qi_t, srs_cu_cp::cu_cp_qos_config> make_default_cu_cp_qos_c
 
     // > Rx
     pdcp_cfg.rx.sn_size               = pdcp_sn_size::size18bits;
-    pdcp_cfg.rx.out_of_order_delivery = false;
+    pdcp_cfg.rx.out_of_order_delivery = true;
     pdcp_cfg.rx.t_reordering          = pdcp_t_reordering::ms220;
 
     cfg.pdcp                     = pdcp_cfg;
@@ -353,7 +353,7 @@ inline std::map<five_qi_t, srs_cu_cp::cu_cp_qos_config> make_default_cu_cp_qos_c
 
     // > Rx
     pdcp_cfg.rx.sn_size               = pdcp_sn_size::size18bits;
-    pdcp_cfg.rx.out_of_order_delivery = false;
+    pdcp_cfg.rx.out_of_order_delivery = true;
     pdcp_cfg.rx.t_reordering          = pdcp_t_reordering::ms500;
 
     cfg.pdcp                      = pdcp_cfg;
@@ -377,7 +377,7 @@ inline std::map<five_qi_t, srs_cu_cp::cu_cp_qos_config> make_default_cu_cp_qos_c
 
     // > Rx
     pdcp_cfg.rx.sn_size               = pdcp_sn_size::size18bits;
-    pdcp_cfg.rx.out_of_order_delivery = false;
+    pdcp_cfg.rx.out_of_order_delivery = true;
     pdcp_cfg.rx.t_reordering          = pdcp_t_reordering::ms0;
 
     cfg.pdcp                      = pdcp_cfg;
@@ -401,7 +401,7 @@ inline std::map<five_qi_t, srs_cu_cp::cu_cp_qos_config> make_default_cu_cp_qos_c
 
     // > Rx
     pdcp_cfg.rx.sn_size               = pdcp_sn_size::size18bits;
-    pdcp_cfg.rx.out_of_order_delivery = false;
+    pdcp_cfg.rx.out_of_order_delivery = true;
     pdcp_cfg.rx.t_reordering          = pdcp_t_reordering::ms100;
 
     cfg.pdcp                      = pdcp_cfg;
@@ -428,7 +428,7 @@ inline std::map<five_qi_t, srs_cu_cp::cu_cp_qos_config> make_default_cu_cp_qos_c
 
     // > Rx
     pdcp_cfg.rx.sn_size               = pdcp_sn_size::size12bits;
-    pdcp_cfg.rx.out_of_order_delivery = false;
+    pdcp_cfg.rx.out_of_order_delivery = true;
     pdcp_cfg.rx.t_reordering          = pdcp_t_reordering::ms0;
 
     cfg.pdcp                      = pdcp_cfg;
@@ -452,7 +452,7 @@ inline std::map<five_qi_t, srs_cu_cp::cu_cp_qos_config> make_default_cu_cp_qos_c
 
     // > Rx
     pdcp_cfg.rx.sn_size               = pdcp_sn_size::size12bits;
-    pdcp_cfg.rx.out_of_order_delivery = false;
+    pdcp_cfg.rx.out_of_order_delivery = true;
     pdcp_cfg.rx.t_reordering          = pdcp_t_reordering::ms0;
 
     cfg.pdcp                      = pdcp_cfg;
@@ -476,7 +476,7 @@ inline std::map<five_qi_t, srs_cu_cp::cu_cp_qos_config> make_default_cu_cp_qos_c
 
     // > Rx
     pdcp_cfg.rx.sn_size               = pdcp_sn_size::size12bits;
-    pdcp_cfg.rx.out_of_order_delivery = false;
+    pdcp_cfg.rx.out_of_order_delivery = true;
     pdcp_cfg.rx.t_reordering          = pdcp_t_reordering::ms0;
 
     cfg.pdcp                      = pdcp_cfg;
@@ -500,7 +500,7 @@ inline std::map<five_qi_t, srs_cu_cp::cu_cp_qos_config> make_default_cu_cp_qos_c
 
     // > Rx
     pdcp_cfg.rx.sn_size               = pdcp_sn_size::size12bits;
-    pdcp_cfg.rx.out_of_order_delivery = false;
+    pdcp_cfg.rx.out_of_order_delivery = true;
     pdcp_cfg.rx.t_reordering          = pdcp_t_reordering::ms0;
 
     cfg.pdcp                      = pdcp_cfg;
@@ -524,7 +524,7 @@ inline std::map<five_qi_t, srs_cu_cp::cu_cp_qos_config> make_default_cu_cp_qos_c
 
     // > Rx
     pdcp_cfg.rx.sn_size               = pdcp_sn_size::size12bits;
-    pdcp_cfg.rx.out_of_order_delivery = false;
+    pdcp_cfg.rx.out_of_order_delivery = true;
     pdcp_cfg.rx.t_reordering          = pdcp_t_reordering::ms0;
 
     cfg.pdcp                      = pdcp_cfg;
@@ -548,7 +548,7 @@ inline std::map<five_qi_t, srs_cu_cp::cu_cp_qos_config> make_default_cu_cp_qos_c
 
     // > Rx
     pdcp_cfg.rx.sn_size               = pdcp_sn_size::size12bits;
-    pdcp_cfg.rx.out_of_order_delivery = false;
+    pdcp_cfg.rx.out_of_order_delivery = true;
     pdcp_cfg.rx.t_reordering          = pdcp_t_reordering::ms0;
 
     cfg.pdcp                      = pdcp_cfg;
@@ -572,7 +572,7 @@ inline std::map<five_qi_t, srs_cu_cp::cu_cp_qos_config> make_default_cu_cp_qos_c
 
     // > Rx
     pdcp_cfg.rx.sn_size               = pdcp_sn_size::size12bits;
-    pdcp_cfg.rx.out_of_order_delivery = false;
+    pdcp_cfg.rx.out_of_order_delivery = true;
     pdcp_cfg.rx.t_reordering          = pdcp_t_reordering::ms0;
 
     cfg.pdcp                      = pdcp_cfg;
@@ -596,7 +596,7 @@ inline std::map<five_qi_t, srs_cu_cp::cu_cp_qos_config> make_default_cu_cp_qos_c
 
     // > Rx
     pdcp_cfg.rx.sn_size               = pdcp_sn_size::size12bits;
-    pdcp_cfg.rx.out_of_order_delivery = false;
+    pdcp_cfg.rx.out_of_order_delivery = true;
     pdcp_cfg.rx.t_reordering          = pdcp_t_reordering::ms0;
 
     cfg.pdcp                      = pdcp_cfg;
@@ -620,7 +620,7 @@ inline std::map<five_qi_t, srs_cu_cp::cu_cp_qos_config> make_default_cu_cp_qos_c
 
     // > Rx
     pdcp_cfg.rx.sn_size               = pdcp_sn_size::size12bits;
-    pdcp_cfg.rx.out_of_order_delivery = false;
+    pdcp_cfg.rx.out_of_order_delivery = true;
     pdcp_cfg.rx.t_reordering          = pdcp_t_reordering::ms0;
 
     cfg.pdcp                      = pdcp_cfg;
@@ -691,3 +691,4 @@ get_supported_plmns(const std::vector<srs_cu_cp::cu_cp_configuration::ngap_confi
 }
 
 } // namespace srsran::config_helpers
+

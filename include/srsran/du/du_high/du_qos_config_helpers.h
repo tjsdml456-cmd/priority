@@ -296,22 +296,16 @@ inline std::map<five_qi_t, srs_du::du_qos_config> make_default_du_qos_config_lis
   {
     // 5QI = 9 e.g Video (Buffered Streaming)
     // PDB = 300ms PER = 10^-6
+    // Research: use UM so UL RLC does not wait for in-order before PDCP/SDAP (QRT).
     srs_du::du_qos_config cfg{};
     // RLC
-    cfg.rlc.mode                    = rlc_mode::am;
-    cfg.rlc.am.tx.sn_field_length   = rlc_am_sn_size::size18bits;
-    cfg.rlc.am.tx.t_poll_retx       = 100;
-    cfg.rlc.am.tx.poll_pdu          = 16;
-    cfg.rlc.am.tx.poll_byte         = -1;
-    cfg.rlc.am.tx.max_retx_thresh   = 32;
-    cfg.rlc.am.tx.max_window        = 0;
-    cfg.rlc.am.tx.queue_size        = default_rlc_queue_size_sdus;
-    cfg.rlc.am.tx.queue_size_bytes  = default_rlc_queue_size_bytes;
-    cfg.rlc.am.rx.sn_field_length   = rlc_am_sn_size::size18bits;
-    cfg.rlc.am.rx.t_reassembly      = 20;
-    cfg.rlc.am.rx.t_status_prohibit = 10;
-    cfg.rlc.am.rx.max_sn_per_status = {};
-    cfg.rlc.metrics_period          = std::chrono::milliseconds(rlc_metrics_report);
+    cfg.rlc.mode                   = rlc_mode::um_bidir;
+    cfg.rlc.um.tx.sn_field_length  = rlc_um_sn_size::size12bits;
+    cfg.rlc.um.rx.sn_field_length  = rlc_um_sn_size::size12bits;
+    cfg.rlc.um.rx.t_reassembly     = 20;
+    cfg.rlc.um.tx.queue_size       = default_rlc_queue_size_sdus;
+    cfg.rlc.um.tx.queue_size_bytes = default_rlc_queue_size_bytes;
+    cfg.rlc.metrics_period         = std::chrono::milliseconds(rlc_metrics_report);
     // F1-U
     cfg.f1u.t_notify              = 10;
     cfg.f1u.rlc_queue_bytes_limit = default_rlc_queue_size_bytes;
@@ -566,3 +560,4 @@ inline std::map<five_qi_t, srs_du::du_qos_config> make_default_du_qos_config_lis
 }
 
 } // namespace srsran::config_helpers
+
