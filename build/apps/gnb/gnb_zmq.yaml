@@ -61,4 +61,3 @@ pcap:
   mac_filename: /tmp/gnb_mac.pcap   # Path where the MAC PCAP is stored.
   ngap_enable: false                # Set to true to enable NGAP PCAPs.
   ngap_filename: /tmp/gnb_ngap.pcap # Path where the NGAP PCAP is stored.
-

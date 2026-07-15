@@ -1109,6 +1109,8 @@ lib/rlc/CMakeFiles/srsran_rlc.dir/rlc_factory.cpp.o: ../lib/rlc/rlc_factory.cpp 
   ../lib/rlc/rlc_bearer_metrics_collector.h \
   ../include/srsran/adt/lockfree_triple_buffer.h \
   ../lib/rlc/rlc_rx_metrics_container.h \
+  ../include/srsran/pdcp/pdcp_sn_util.h \
+  ../include/srsran/support/bit_encoding.h \
   ../lib/rlc/rlc_tx_entity.h \
   ../lib/rlc/rlc_tx_metrics_container.h \
   ../lib/rlc/rlc_rx_am_entity.h \
@@ -1529,9 +1531,11 @@ lib/rlc/CMakeFiles/srsran_rlc.dir/rlc_rx_am_entity.cpp.o: ../lib/rlc/rlc_rx_am_e
   /usr/lib/gcc/x86_64-linux-gnu/11/include/float.h \
   ../include/srsran/rlc/rlc_tx_metrics.h \
   ../lib/rlc/rlc_rx_metrics_container.h \
-  ../include/srsran/pcap/rlc_pcap.h \
-  ../include/srsran/rlc/rlc_rx.h \
   ../include/srsran/adt/byte_buffer_chain.h \
+  ../include/srsran/pcap/rlc_pcap.h \
+  ../include/srsran/pdcp/pdcp_sn_util.h \
+  ../include/srsran/support/bit_encoding.h \
+  ../include/srsran/rlc/rlc_rx.h \
   ../include/srsran/support/sdu_window.h \
   ../include/srsran/adt/circular_map.h \
   /usr/include/c++/11/set \
@@ -1908,7 +1912,6 @@ lib/rlc/CMakeFiles/srsran_rlc.dir/rlc_rx_tm_entity.cpp.o: ../lib/rlc/rlc_rx_tm_e
   /usr/lib/gcc/x86_64-linux-gnu/11/include/float.h \
   ../include/srsran/rlc/rlc_tx_metrics.h \
   ../lib/rlc/rlc_rx_metrics_container.h \
-  ../include/srsran/pcap/rlc_pcap.h \
   ../include/srsran/adt/byte_buffer.h \
   ../include/srsran/adt/byte_buffer_view.h \
   ../include/srsran/adt/detail/byte_buffer_range_helpers.h \
@@ -1922,8 +1925,11 @@ lib/rlc/CMakeFiles/srsran_rlc.dir/rlc_rx_tm_entity.cpp.o: ../lib/rlc/rlc_rx_tm_e
   ../include/srsran/adt/detail/intrusive_ptr.h \
   ../include/srsran/adt/expected.h \
   ../external/TartanLlama/expected.hpp \
-  ../include/srsran/rlc/rlc_rx.h \
-  ../include/srsran/adt/byte_buffer_chain.h
+  ../include/srsran/adt/byte_buffer_chain.h \
+  ../include/srsran/pcap/rlc_pcap.h \
+  ../include/srsran/pdcp/pdcp_sn_util.h \
+  ../include/srsran/support/bit_encoding.h \
+  ../include/srsran/rlc/rlc_rx.h
 
 lib/rlc/CMakeFiles/srsran_rlc.dir/rlc_rx_um_entity.cpp.o: ../lib/rlc/rlc_rx_um_entity.cpp \
   /usr/include/stdc-predef.h \
@@ -2289,7 +2295,6 @@ lib/rlc/CMakeFiles/srsran_rlc.dir/rlc_rx_um_entity.cpp.o: ../lib/rlc/rlc_rx_um_e
   /usr/lib/gcc/x86_64-linux-gnu/11/include/float.h \
   ../include/srsran/rlc/rlc_tx_metrics.h \
   ../lib/rlc/rlc_rx_metrics_container.h \
-  ../include/srsran/pcap/rlc_pcap.h \
   ../include/srsran/adt/byte_buffer.h \
   ../include/srsran/adt/byte_buffer_view.h \
   ../include/srsran/adt/detail/byte_buffer_range_helpers.h \
@@ -2303,8 +2308,11 @@ lib/rlc/CMakeFiles/srsran_rlc.dir/rlc_rx_um_entity.cpp.o: ../lib/rlc/rlc_rx_um_e
   ../include/srsran/adt/detail/intrusive_ptr.h \
   ../include/srsran/adt/expected.h \
   ../external/TartanLlama/expected.hpp \
-  ../include/srsran/rlc/rlc_rx.h \
   ../include/srsran/adt/byte_buffer_chain.h \
+  ../include/srsran/pcap/rlc_pcap.h \
+  ../include/srsran/pdcp/pdcp_sn_util.h \
+  ../include/srsran/support/bit_encoding.h \
+  ../include/srsran/rlc/rlc_rx.h \
   ../lib/rlc/rlc_um_pdu.h \
   ../include/srsran/support/sdu_window.h \
   ../include/srsran/adt/circular_map.h \
@@ -3536,8 +3544,6 @@ lib/rlc/CMakeFiles/srsran_rlc.dir/rlc_tx_um_entity.cpp.o: ../lib/rlc/rlc_tx_um_e
 
 ../include/srsran/ran/pdsch/pdsch_constants.h:
 
-../include/srsran/pdcp/pdcp_sn_util.h:
-
 ../lib/rlc/rlc_rx_tm_entity.cpp:
 
 ../lib/rlc/rlc_rx_am_entity.cpp:
@@ -3597,6 +3603,8 @@ lib/rlc/CMakeFiles/srsran_rlc.dir/rlc_tx_um_entity.cpp.o: ../lib/rlc/rlc_tx_um_e
 ../lib/rlc/rlc_am_interconnect.h:
 
 ../lib/rlc/rlc_rx_am_entity.h:
+
+../include/srsran/pdcp/pdcp_sn_util.h:
 
 ../lib/rlc/rlc_rx_entity.h:
 

@@ -418,7 +418,7 @@ void pdcp_entity_rx::apply_reordering(pdcp_rx_pdu_info pdu_info)
   // Keep an empty placeholder in the RX window for RX_DELIV / status-report bookkeeping;
   // do not forward that empty buffer again when advancing RX_DELIV.
   if (cfg.out_of_order_delivery) {
-    logger.log_info("RX SDU (OOO). count={}", rcvd_count);
+    logger.log_info("QRT-PROF PDCP_RX (OOO) count={} sn={} pdu_len={}", rcvd_count, SN(rcvd_count), pdu_info.buf.length());
     metrics.add_sdus(1, pdu_info.buf.length());
     record_reordering_dealy(pdu_info.time_of_arrival);
     auto sdu_latency_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -485,7 +485,7 @@ void pdcp_entity_rx::deliver_sdu(pdcp_rx_sdu_info& sdu_info)
     return;
   }
 
-  logger.log_info("RX SDU. count={}", sdu_info.count);
+  logger.log_info("QRT-PROF PDCP_RX count={} sn={} pdu_len={}", sdu_info.count, SN(sdu_info.count), sdu_info.buf.length());
 
   // Pass PDCP SDU to the upper layers
   metrics.add_sdus(1, sdu_info.buf.length());

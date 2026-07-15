@@ -222,6 +222,7 @@ void rlc_rx_am_entity::handle_data_pdu(byte_buffer_slice buf)
       // Do not pass empty SDU to upper layers and continue as normal to maintain state
     } else {
       logger.log_info("RX SDU. sn={} sdu_len={}", header.sn, sdu.value().length());
+      log_qrt_prof_rx_sdu(sdu.value(), header.sn);
       metrics.metrics_add_sdus(1, sdu.value().length());
       auto latency = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() -
                                                                           sdu_info.time_of_arrival);
@@ -753,3 +754,4 @@ void rlc_rx_am_entity::on_expired_reassembly_timer()
   log_state(srslog::basic_levels::debug);
   logger.log_debug("RX window state: nof_sdus={}", rx_window.size());
 }
+

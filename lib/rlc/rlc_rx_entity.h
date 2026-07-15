@@ -25,8 +25,14 @@
 #include "rlc_bearer_logger.h"
 #include "rlc_bearer_metrics_collector.h"
 #include "rlc_rx_metrics_container.h"
+#include "srsran/adt/byte_buffer.h"
+#include "srsran/adt/byte_buffer_chain.h"
+#include "srsran/adt/span.h"
 #include "srsran/pcap/rlc_pcap.h"
+#include "srsran/pdcp/pdcp_sn_util.h"
 #include "srsran/rlc/rlc_rx.h"
+#include <cstdint>
+#include <optional>
 
 namespace srsran {
 
@@ -69,6 +75,74 @@ protected:
 
   unique_timer high_metrics_timer;
 
+  /// Peek PDCP SN from the start of an RLC SDU / full-or-first segment payload (DRB 18/12-bit).
+  std::optional<uint32_t> peek_pdcp_sn(byte_buffer_view payload)
+  {
+    if (payload.length() < 2) {
+      return {};
+    }
+    uint8_t hdr[3];
+    size_t  n = 0;
+    for (auto it = payload.begin(); it != payload.end() && n < 3; ++it) {
+      hdr[n++] = *it;
+    }
+    expected<byte_buffer> tmp = byte_buffer::create(span<const uint8_t>{hdr, n});
+    if (not tmp.has_value()) {
+      return {};
+    }
+    auto pdcp_sn = get_pdcp_sn(*tmp, pdcp_sn_size::size18bits, /*is_srb=*/false, logger.get_basic_logger());
+    if (not pdcp_sn.has_value()) {
+      pdcp_sn = get_pdcp_sn(*tmp, pdcp_sn_size::size12bits, /*is_srb=*/false, logger.get_basic_logger());
+    }
+    return pdcp_sn;
+  }
+
+  /// Log when a UL RLC PDU payload arrives (before reassembly / upper delivery).
+  void log_qrt_prof_rx_pdu(byte_buffer_view          payload,
+                           std::optional<uint32_t>   rlc_sn,
+                           const char*               si,
+                           bool                      peek_pdcp)
+  {
+    std::optional<uint32_t> pdcp_sn = peek_pdcp ? peek_pdcp_sn(payload) : std::nullopt;
+    if (rlc_sn.has_value()) {
+      logger.log_info("QRT-PROF RLC_RX_PDU pdcp_sn={} rlc_sn={} si={} payload_len={}",
+                      pdcp_sn,
+                      rlc_sn.value(),
+                      si,
+                      payload.length());
+    } else {
+      logger.log_info(
+          "QRT-PROF RLC_RX_PDU pdcp_sn={} si={} payload_len={}", pdcp_sn, si, payload.length());
+    }
+  }
+
+  /// Log complete UL RLC SDU with peeked PDCP SN (matches UE PDCP_SN / gNB PDCP count when HFN=0).
+  void log_qrt_prof_rx_sdu(const byte_buffer_chain& sdu, std::optional<uint32_t> rlc_sn)
+  {
+    // First bytes of chain == PDCP header of the RLC SDU.
+    uint8_t hdr[3];
+    size_t  n = 0;
+    for (auto it = sdu.begin(); it != sdu.end() && n < 3; ++it) {
+      hdr[n++] = *it;
+    }
+    std::optional<uint32_t> pdcp_sn;
+    if (n >= 2) {
+      expected<byte_buffer> tmp = byte_buffer::create(span<const uint8_t>{hdr, n});
+      if (tmp.has_value()) {
+        pdcp_sn = get_pdcp_sn(*tmp, pdcp_sn_size::size18bits, /*is_srb=*/false, logger.get_basic_logger());
+        if (not pdcp_sn.has_value()) {
+          pdcp_sn = get_pdcp_sn(*tmp, pdcp_sn_size::size12bits, /*is_srb=*/false, logger.get_basic_logger());
+        }
+      }
+    }
+    if (rlc_sn.has_value()) {
+      logger.log_info(
+          "QRT-PROF RLC_RX_SDU pdcp_sn={} rlc_sn={} sdu_len={}", pdcp_sn, rlc_sn.value(), sdu.length());
+    } else {
+      logger.log_info("QRT-PROF RLC_RX_SDU pdcp_sn={} sdu_len={}", pdcp_sn, sdu.length());
+    }
+  }
+
 private:
   rlc_bearer_metrics_collector& metrics_coll;
 
@@ -87,3 +161,4 @@ public:
 };
 
 } // namespace srsran
+

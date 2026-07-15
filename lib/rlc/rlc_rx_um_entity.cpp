@@ -79,6 +79,13 @@ void rlc_rx_um_entity::handle_pdu(byte_buffer_slice buf)
   // strip header, extract payload
   byte_buffer_slice payload = buf.make_slice(header_len, buf.length() - header_len);
 
+  {
+    const bool                  peek_pdcp = (header.si == rlc_si_field::full_sdu) || (header.si == rlc_si_field::first_segment);
+    std::optional<uint32_t>     rlc_sn =
+        (header.si == rlc_si_field::full_sdu) ? std::nullopt : std::optional<uint32_t>{header.sn};
+    log_qrt_prof_rx_pdu(payload.view(), rlc_sn, fmt::format("{}", header.si).c_str(), peek_pdcp);
+  }
+
   // check if PDU contains a SN
   if (header.si == rlc_si_field::full_sdu) {
     size_t                      sdu_len = payload.length();
@@ -91,6 +98,7 @@ void rlc_rx_um_entity::handle_pdu(byte_buffer_slice buf)
 
     // deliver to upper layer
     logger.log_info("RX SDU. sdu_len={}", sdu.value().length());
+    log_qrt_prof_rx_sdu(sdu.value(), /*rlc_sn=*/std::nullopt);
     metrics.metrics_add_sdus(1, sdu.value().length());
     auto latency = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start);
     metrics.metrics_add_sdu_latency(latency.count() / 1000);
@@ -128,6 +136,7 @@ void rlc_rx_um_entity::handle_pdu(byte_buffer_slice buf)
       // Do not pass empty SDU to upper layers and continue as normal to maintain state
     } else {
       logger.log_info("RX SDU. sn={} sdu_len={}", header.sn, sdu.value().length());
+      log_qrt_prof_rx_sdu(sdu.value(), header.sn);
       auto latency = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() -
                                                                           sdu_info.time_of_arrival);
       metrics.metrics_add_sdu_latency(latency.count() / 1000);
@@ -523,3 +532,4 @@ bool rlc_rx_um_entity::sn_invalid_for_rx_buffer(const uint32_t sn)
   return (rx_mod_base(st.rx_next_highest - um_window_size) <= rx_mod_base(sn) &&
           rx_mod_base(sn) < rx_mod_base(st.rx_next_reassembly));
 }
+

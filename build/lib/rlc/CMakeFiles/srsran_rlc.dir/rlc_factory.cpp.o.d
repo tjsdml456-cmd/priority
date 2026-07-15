@@ -321,6 +321,8 @@ lib/rlc/CMakeFiles/srsran_rlc.dir/rlc_factory.cpp.o: \
  /home/user/srsRAN_main/srsRAN_Project/lib/rlc/rlc_bearer_metrics_collector.h \
  /home/user/srsRAN_main/srsRAN_Project/include/srsran/adt/lockfree_triple_buffer.h \
  /home/user/srsRAN_main/srsRAN_Project/lib/rlc/rlc_rx_metrics_container.h \
+ /home/user/srsRAN_main/srsRAN_Project/include/srsran/pdcp/pdcp_sn_util.h \
+ /home/user/srsRAN_main/srsRAN_Project/include/srsran/support/bit_encoding.h \
  /home/user/srsRAN_main/srsRAN_Project/lib/rlc/rlc_tx_entity.h \
  /home/user/srsRAN_main/srsRAN_Project/lib/rlc/rlc_tx_metrics_container.h \
  /home/user/srsRAN_main/srsRAN_Project/lib/rlc/rlc_rx_am_entity.h \
