@@ -748,15 +748,41 @@ unsigned intra_slice_scheduler::schedule_ul_newtx_candidates(ul_ran_slice_candid
       }
 
       const auto dscp_opt = dscp_qos_mapper::get_instance().get_dscp_for_ue(fmt::underlying(grant.context.ue_index));
+      const int  dscp_val = dscp_opt.has_value() ? static_cast<int>(dscp_opt.value()) : -1;
+      const uint32_t ue_id = fmt::underlying(grant.context.ue_index);
+      const slot_point slot_tx = slice.get_slot_tx();
+
+      if (dscp_opt.has_value()) {
+        const auto last_it = last_ul_grant_dscp.find(ue_id);
+        const bool first_after_dscp =
+            (last_it == last_ul_grant_dscp.end() || last_it->second != dscp_opt.value());
+        if (first_after_dscp) {
+          const int prev_dscp = (last_it == last_ul_grant_dscp.end()) ? -1 : static_cast<int>(last_it->second);
+          logger.info("QRT-PROF GNB_SCHED_SLOT ue={} dscp_old={} dscp_new={} slot={} sfn={} slot_idx={} "
+                      "pusch_slot={} pusch_sfn={} pusch_slot_idx={} t_us={}",
+                      ue_id,
+                      prev_dscp,
+                      dscp_val,
+                      slot_tx.to_uint(),
+                      slot_tx.sfn(),
+                      slot_tx.slot_index(),
+                      pusch_slot.to_uint(),
+                      pusch_slot.sfn(),
+                      pusch_slot.slot_index(),
+                      t_us);
+          last_ul_grant_dscp[ue_id] = dscp_opt.value();
+        }
+      }
+
       logger.info(
           "[UL-GRANT] t_us={} slot_tx={} pusch_slot={} ue={} rnti={} dscp={} 5qi={} tb_size={} rbs={} prb=[{},{}] "
           "nof_prb={} sym=[{},{}] mcs={} k2={} nof_retxs={}",
           t_us,
-          slice.get_slot_tx(),
+          slot_tx,
           pusch_slot,
-          fmt::underlying(grant.context.ue_index),
+          ue_id,
           grant.pusch_cfg.rnti,
-          dscp_opt.has_value() ? static_cast<int>(dscp_opt.value()) : -1,
+          dscp_val,
           fiveqi_val,
           grant.pusch_cfg.tb_size_bytes,
           grant.pusch_cfg.rbs,
@@ -994,5 +1020,6 @@ void intra_slice_scheduler::update_used_ul_vrbs(const ul_ran_slice_candidate& sl
                      .ul_res_grid.used_prbs(init_ul_bwp.generic_params.scs, ul_crb_lims, symbols_to_check)
                      .convert_to<vrb_bitmap>();
 }
+
 
 
